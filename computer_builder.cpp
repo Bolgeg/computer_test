@@ -6,6 +6,8 @@ class ComputerBuilder
 	{
 		public:
 		
+		static constexpr int maximumVariableSizeInBits=(1<<30);
+		
 		class Component
 		{
 			public:
@@ -126,6 +128,9 @@ class ComputerBuilder
 			}
 		};
 		
+		vector<string> originalLines;
+		bool originalLinesProcessed=false;
+		vector<int> lineIndexToOriginalLineIndex;
 		vector<string> lines;
 		
 		vector<Component> components;
@@ -199,11 +204,24 @@ class ComputerBuilder
 				{
 					if(outputLine.back()==' ') outputLine.resize(outputLine.size()-1);
 				}
-				lines.push_back(outputLine);
+				lineIndexToOriginalLineIndex.push_back(originalLines.size());
+				originalLines.push_back(outputLine);
+			}
+			int resolveLineIndex(int lineIndex)
+			{
+				int resolvedLineIndex=lineIndex;
+				if(lineIndex>=0 && lineIndex<lineIndexToOriginalLineIndex.size())
+				{
+					resolvedLineIndex=lineIndexToOriginalLineIndex[lineIndex];
+				}
+				return resolvedLineIndex;
 			}
 			string errorString(int errorCode,int lineIndex)
 			{
-				return string("ERROR_")+std::to_string(errorCode)+" at line "+std::to_string(lineIndex+1);
+				int originalLineIndex=lineIndex;
+				if(originalLinesProcessed) originalLineIndex=resolveLineIndex(lineIndex);
+				
+				return string("ERROR_")+std::to_string(errorCode)+" at line "+std::to_string(originalLineIndex+1);
 			}
 			bool isValidIdentifier(const string& identifier)
 			{
@@ -254,14 +272,14 @@ class ComputerBuilder
 				
 				return strs;
 			}
-			vector<string> splitStringAtColons(const string& line)
+			vector<string> splitStringAtCharacterMatches(const string& line,uint8_t character)
 			{
 				vector<string> strs;
 				
 				string str;
 				for(size_t p=0;p<line.size();p++)
 				{
-					if(line[p]==':')
+					if(line[p]==character)
 					{
 						strs.emplace_back(str);
 						str=string();
@@ -274,6 +292,367 @@ class ComputerBuilder
 				strs.emplace_back(str);
 				
 				return strs;
+			}
+			vector<string> splitStringAtColons(const string& line)
+			{
+				return splitStringAtCharacterMatches(line,':');
+			}
+			vector<string> splitStringAtCommas(const string& line)
+			{
+				return splitStringAtCharacterMatches(line,',');
+			}
+			string trimString(const string& line)
+			{
+				size_t start=line.find_first_not_of(" ");
+				if(start==string::npos) return string();
+				
+				size_t end=line.find_last_not_of(" ");
+				
+				return line.substr(start,(end+1)-start);
+			}
+			bool stringStartsWith(const string& str,const string& ref)
+			{
+				if(str.size()<ref.size()) return false;
+				return str.substr(0,ref.size())==ref;
+			}
+			bool stringEndsWith(const string& str,const string& ref)
+			{
+				if(str.size()<ref.size()) return false;
+				return str.substr(str.size()-ref.size(),ref.size())==ref;
+			}
+			
+			void addTemplateProcessedLine(const string& line,int lineIndex)
+			{
+				lines.emplace_back(line);
+				lineIndexToOriginalLineIndex.push_back(lineIndex);
+			}
+			vector<string> splitLineTemplates(const string& line)
+			{
+				vector<string> strs;
+				string str;
+				for(size_t p=0;p<line.size();p++)
+				{
+					uint8_t c=line[p];
+					
+					if(c=='<')
+					{
+						if(str.size()>0)
+						{
+							strs.emplace_back(str);
+							str=string();
+						}
+						str.push_back(c);
+					}
+					else if(c=='>')
+					{
+						str.push_back(c);
+						strs.emplace_back(str);
+						str=string();
+					}
+					else
+					{
+						str.push_back(c);
+					}
+				}
+				if(str.size()>0) strs.emplace_back(str);
+				return strs;
+			}
+			bool checkSplittedTemplateLineValid(const vector<string>& strs)
+			{
+				for(size_t i=0;i<strs.size();i++)
+				{
+					if(strs[i].size()==0) return false;
+					else if((strs[i][0]=='<') != (strs[i].back()=='>')) return false;
+				}
+				return true;
+			}
+			
+			class TemplateParameter
+			{
+				public:
+				
+				string name;
+				vector<string> possibleValues;
+				
+				TemplateParameter(){}
+				TemplateParameter(const string& _name,const vector<string>& _possibleValues)
+				{
+					name=_name;
+					possibleValues=_possibleValues;
+				}
+			};
+			
+			class TemplateArgument
+			{
+				public:
+				
+				string name;
+				string value;
+				
+				TemplateArgument(){}
+				TemplateArgument(const string& _name,const string& _value)
+				{
+					name=_name;
+					value=_value;
+				}
+			};
+			
+			bool removeStringStartWith(string& str,const string& ref)
+			{
+				if(stringStartsWith(str,ref))
+				{
+					str=str.substr(ref.size(),str.size()-ref.size());
+					return true;
+				}
+				else return false;
+			}
+			bool removeStringEndWith(string& str,const string& ref)
+			{
+				if(stringEndsWith(str,ref))
+				{
+					str=str.substr(0,str.size()-ref.size());
+					return true;
+				}
+				else return false;
+			}
+			string getTemplateArgumentWithName(const string& name,const vector<TemplateArgument>& templateArguments,int lineIndex)
+			{
+				int argumentIndex=findWithName(templateArguments,name);
+				if(argumentIndex==-1) throw errorString(__LINE__,lineIndex);
+				
+				return templateArguments[argumentIndex].value;
+			}
+			int getTemplateArgumentIntegerValueWithName(const string& name,const vector<TemplateArgument>& templateArguments,int lineIndex)
+			{
+				string valueStr=getTemplateArgumentWithName(name,templateArguments,lineIndex);
+				
+				int value=0;
+				
+				if(!stringToIntSimple(valueStr,value)) throw errorString(__LINE__,lineIndex);
+				
+				return value;
+			}
+			string getTemplateArgumentExpressionResult(const string& expressionString,const vector<TemplateArgument>& templateArguments,int lineIndex)
+			{
+				string str=expressionString;
+				
+				if(removeStringStartWith(str,"2**"))
+				{
+					if(removeStringEndWith(str,"/2"))
+					{
+						int value=getTemplateArgumentIntegerValueWithName(str,templateArguments,lineIndex);
+						
+						if(value<1 || value>=32) throw errorString(__LINE__,lineIndex);
+						value=(1<<value)/2;
+						
+						return std::to_string(value);
+					}
+					else
+					{
+						int value=getTemplateArgumentIntegerValueWithName(str,templateArguments,lineIndex);
+						
+						if(value<0 || value>=31) throw errorString(__LINE__,lineIndex);
+						value=(1<<value);
+						
+						return std::to_string(value);
+					}
+				}
+				else if(removeStringEndWith(str,"/2"))
+				{
+					int value=getTemplateArgumentIntegerValueWithName(str,templateArguments,lineIndex);
+					
+					if(value%2!=0) throw errorString(__LINE__,lineIndex);
+					value/=2;
+					
+					return std::to_string(value);
+				}
+				else if(removeStringEndWith(str,"-1"))
+				{
+					int value=getTemplateArgumentIntegerValueWithName(str,templateArguments,lineIndex);
+					
+					if(value<=0) throw errorString(__LINE__,lineIndex);
+					value-=1;
+					
+					return std::to_string(value);
+				}
+				else
+				{
+					return getTemplateArgumentWithName(str,templateArguments,lineIndex);
+				}
+			}
+			
+			void processTemplate(size_t& originalLineIndex)
+			{
+				size_t startOriginalLineIndex=originalLineIndex;
+				vector<string> templateLines;
+				
+				for(;originalLineIndex<originalLines.size();originalLineIndex++)
+				{
+					string line=originalLines[originalLineIndex];
+					
+					if(originalLineIndex>startOriginalLineIndex)
+					{
+						if(line.size()>0)
+						{
+							if(line.back()==':')
+							{
+								break;
+							}
+						}
+					}
+					
+					templateLines.emplace_back(line);
+				}
+				
+				vector<TemplateParameter> templateParameters;
+				int numberOfCombinations=1;
+				{
+					size_t lineIndex=startOriginalLineIndex;
+					
+					string startLine=templateLines[0];
+					vector<string> startLineSplitted=splitLineTemplates(startLine);
+					if(!checkSplittedTemplateLineValid(startLineSplitted)) throw errorString(__LINE__,lineIndex);
+					for(int i=0;i<startLineSplitted.size();i++)
+					{
+						string str=startLineSplitted[i];
+						if(str[0]=='<')
+						{
+							str=str.substr(1,str.size()-2);
+							
+							size_t equalSign=str.find_first_of("=");
+							if(equalSign==string::npos) throw errorString(__LINE__,lineIndex);
+							
+							string name=str.substr(0,equalSign);
+							
+							if(!isValidIdentifier(name)) throw errorString(__LINE__,lineIndex);
+							
+							vector<string> valuesStr=splitStringAtCommas(str.substr(equalSign+1,str.size()-(equalSign+1)));
+							
+							if(valuesStr.size()==0) throw errorString(__LINE__,lineIndex);
+							for(int j=0;j<valuesStr.size();j++)
+							{
+								valuesStr[j]=trimString(valuesStr[j]);
+								if(valuesStr[j].size()==0) throw errorString(__LINE__,lineIndex);
+								for(int k=0;k<valuesStr[j].size();k++)
+								{
+									if(valuesStr[j][j]==' ') throw errorString(__LINE__,lineIndex);
+								}
+							}
+							
+							if(findWithName(templateParameters,name)!=-1) throw errorString(__LINE__,lineIndex);
+							
+							templateParameters.emplace_back(name,valuesStr);
+						}
+					}
+					
+					if(templateParameters.size()==0) throw errorString(__LINE__,lineIndex);
+					
+					constexpr int maximumNumberOfCombinations=65536;
+					
+					numberOfCombinations=1;
+					for(size_t i=0;i<templateParameters.size();i++)
+					{
+						size_t count=templateParameters[i].possibleValues.size();
+						
+						if(count>maximumNumberOfCombinations) throw errorString(__LINE__,lineIndex);
+						
+						numberOfCombinations*=count;
+						
+						if(numberOfCombinations>maximumNumberOfCombinations) throw errorString(__LINE__,lineIndex);
+					}
+				}
+				
+				vector<TemplateArgument> templateArguments(templateParameters.size());
+				for(int i=0;i<templateParameters.size();i++)
+				{
+					templateArguments[i].name=templateParameters[i].name;
+				}
+				for(int combination=0;combination<numberOfCombinations;combination++)
+				{
+					{
+						int base=1;
+						for(int i=0;i<templateParameters.size();i++)
+						{
+							int index=(combination/base)%templateParameters[i].possibleValues.size();
+							
+							base*=templateParameters[i].possibleValues.size();
+							
+							templateArguments[i].value=templateParameters[i].possibleValues[index];
+						}
+					}
+					
+					for(size_t templateLineIndex=0;templateLineIndex<templateLines.size();templateLineIndex++)
+					{
+						string line=templateLines[templateLineIndex];
+						
+						size_t lineIndex=startOriginalLineIndex+templateLineIndex;
+						
+						string finalLine;
+						
+						if(line.size()>0)
+						{
+							vector<string> lineSplitted=splitLineTemplates(line);
+							if(!checkSplittedTemplateLineValid(lineSplitted)) throw errorString(__LINE__,lineIndex);
+							
+							for(size_t i=0;i<lineSplitted.size();i++)
+							{
+								string str=lineSplitted[i];
+								if(str[0]=='<')
+								{
+									str=str.substr(1,str.size()-2);
+									
+									if(templateLineIndex==0)
+									{
+										size_t equalSign=str.find_first_of("=");
+										if(equalSign==string::npos) throw errorString(__LINE__,lineIndex);
+										
+										string name=str.substr(0,equalSign);
+										
+										int parameterIndex=findWithName(templateParameters,name);
+										if(parameterIndex==-1) throw errorString(__LINE__,lineIndex);
+										
+										finalLine+=templateArguments[parameterIndex].value;
+									}
+									else
+									{
+										finalLine+=getTemplateArgumentExpressionResult(str,templateArguments,lineIndex);
+									}
+								}
+								else
+								{
+									finalLine+=str;
+								}
+							}
+						}
+						
+						addTemplateProcessedLine(finalLine,lineIndex);
+					}
+				}
+			}
+			void processTemplates()
+			{
+				for(size_t originalLineIndex=0;originalLineIndex<originalLines.size();)
+				{
+					string line=originalLines[originalLineIndex];
+					
+					if(line.size()>0)
+					{
+						if(line.back()==':')
+						{
+							if(line.find_first_of("<")!=string::npos)
+							{
+								processTemplate(originalLineIndex);
+								continue;
+							}
+						}
+					}
+					
+					addTemplateProcessedLine(line,originalLineIndex);
+					
+					originalLineIndex++;
+				}
+				
+				originalLinesProcessed=true;
 			}
 			
 			bool isVariableDeclarationLine(const string& line)
@@ -307,7 +686,7 @@ class ComputerBuilder
 					{
 						string str=splitted[1];
 						sizeInBits=std::stoi(str);
-						if(sizeInBits<=0 || sizeInBits>65536) throw 1;
+						if(sizeInBits<=0 || sizeInBits>maximumVariableSizeInBits) throw 1;
 						if(std::to_string(sizeInBits)!=str) throw 1;
 					}
 					catch(...)
@@ -380,17 +759,14 @@ class ComputerBuilder
 			int getSetSizeInBits(const string& setString)
 			{
 				string name="set";
-				if(setString.size()>=name.size())
+				if(stringStartsWith(setString,name))
 				{
-					if(setString.substr(0,name.size())==name)
+					if(setString.size()==name.size()) return 1;
+					
+					int value=0;
+					if(stringToIntSimple(setString.substr(name.size(),setString.size()-name.size()),value))
 					{
-						if(setString.size()==name.size()) return 1;
-						
-						int value=0;
-						if(stringToIntSimple(setString.substr(name.size(),setString.size()-name.size()),value))
-						{
-							if(value>0 && value<=65536) return value;
-						}
+						if(value>0 && value<=maximumVariableSizeInBits) return value;
 					}
 				}
 				return -1;
@@ -398,25 +774,22 @@ class ComputerBuilder
 			bool getConcatSizeInBits(const string& concatString,int& sizeA,int& sizeB)
 			{
 				string name="concat";
-				if(concatString.size()>=name.size())
+				if(stringStartsWith(concatString,name))
 				{
-					if(concatString.substr(0,name.size())==name)
-					{
-						if(concatString.size()==name.size()) return false;
-						
-						string sizesStr=concatString.substr(name.size(),concatString.size()-name.size());
-						
-						size_t underscore=sizesStr.find_first_of("_");
-						if(underscore==string::npos) return false;
-						
-						if(!stringToIntSimple(sizesStr.substr(0,underscore),sizeA)) return false;
-						if(sizeA<=0 || sizeA>65536) return false;
-						
-						if(!stringToIntSimple(sizesStr.substr(underscore+1,sizesStr.size()-(underscore+1)),sizeB)) return false;
-						if(sizeB<=0 || sizeB>65536) return false;
-						
-						return true;
-					}
+					if(concatString.size()==name.size()) return false;
+					
+					string sizesStr=concatString.substr(name.size(),concatString.size()-name.size());
+					
+					size_t underscore=sizesStr.find_first_of("_");
+					if(underscore==string::npos) return false;
+					
+					if(!stringToIntSimple(sizesStr.substr(0,underscore),sizeA)) return false;
+					if(sizeA<=0 || sizeA>maximumVariableSizeInBits) return false;
+					
+					if(!stringToIntSimple(sizesStr.substr(underscore+1,sizesStr.size()-(underscore+1)),sizeB)) return false;
+					if(sizeB<=0 || sizeB>maximumVariableSizeInBits) return false;
+					
+					return true;
 				}
 				return false;
 			}
@@ -720,13 +1093,13 @@ class ComputerBuilder
 							}
 							if(count>0) str+=", ";
 							
-							str+=components[i].name+" (line "+std::to_string(components[i].firstLine+1)+")";
+							str+=components[i].name+" (line "+std::to_string(resolveLineIndex(components[i].firstLine)+1)+")";
 							
 							count++;
 						}
 					}
 					
-					throw string("Error: Cannot compile certain components due to recursivity: ")+str;
+					throw string("Error: Cannot compile certain components due to infinite recursivity: ")+str;
 				}
 			}
 			
@@ -941,6 +1314,8 @@ class ComputerBuilder
 		public:
 		Computer compile()
 		{
+			processTemplates();
+			
 			readComponents();
 			
 			processComponents();

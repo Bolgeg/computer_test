@@ -1,3 +1,45 @@
+<NAME=not>1:
+
+output: out
+input: in
+
+output=<NAME> input
+
+
+
+<NAME=not><N=2,4,8,16>:
+
+output: out <N>
+input: in <N>
+
+a=<NAME><N/2> input[0:<N/2>]
+b=<NAME><N/2> input[<N/2>:<N>]
+output=concat<N/2>_<N/2> a b
+
+
+
+<NAME=and,or,xor>1:
+
+output: out
+inputA: in
+inputB: in
+
+output=<NAME> inputA inputB
+
+
+
+<NAME=and,or,xor><N=2,4,8,16>:
+
+output: out <N>
+inputA: in <N>
+inputB: in <N>
+
+a=<NAME><N/2> inputA[0:<N/2>] inputB[0:<N/2>]
+b=<NAME><N/2> inputA[<N/2>:<N>] inputB[<N/2>:<N>]
+output=concat<N/2>_<N/2> a b
+
+
+
 not:
 
 output: out
@@ -55,6 +97,19 @@ output=and a inputC
 
 
 
+orABC:
+
+output: out
+
+inputA: in
+inputB: in
+inputC: in
+
+a=or inputA inputB
+output=or a inputC
+
+
+
 xorABC:
 
 output: out
@@ -87,63 +142,70 @@ outputCarry=or b d
 
 
 
-add2:
+add1:
 
-output: out 2
+output: out
 outputCarry: out
 
-inputA: in 2
-inputB: in 2
-inputCarry: in
+inputA: in
+inputB: in
+inputC: in
 
-a carry=add inputA[0] inputB[0] inputCarry
-b outputCarry=add inputA[1] inputB[1] carry
-output=concat1_1 a b
+output outputCarry=add inputA inputB inputC
 
 
 
-add4:
+add<N=2,4,8,16>:
 
-output: out 4
+output: out <N>
 outputCarry: out
 
-inputA: in 4
-inputB: in 4
+inputA: in <N>
+inputB: in <N>
 inputCarry: in
 
-a carry=add2 inputA[0:2] inputB[0:2] inputCarry
-b outputCarry=add2 inputA[2:4] inputB[2:4] carry
-output=concat2_2 a b
+a carry=add<N/2> inputA[0:<N/2>] inputB[0:<N/2>] inputCarry
+b outputCarry=add<N/2> inputA[<N/2>:<N>] inputB[<N/2>:<N>] carry
+output=concat<N/2>_<N/2> a b
 
 
 
-add8:
+multiplexer:
 
-output: out 8
-outputCarry: out
+output: out
 
-inputA: in 8
-inputB: in 8
-inputCarry: in
+inputControl: in
+inputA: in
+inputB: in
 
-a carry=add4 inputA[0:4] inputB[0:4] inputCarry
-b outputCarry=add4 inputA[4:8] inputB[4:8] carry
-output=concat4_4 a b
+inputControlNot=not inputControl
+a=nand inputControlNot inputA
+b=nand inputControl inputB
+output=nand a b
 
 
 
-add16:
+multiplexer1:
 
-output: out 16
-outputCarry: out
+output: out
 
-inputA: in 16
-inputB: in 16
-inputCarry: in
+inputControl: in
+input: in 2
 
-a carry=add8 inputA[0:8] inputB[0:8] inputCarry
-b outputCarry=add8 inputA[8:16] inputB[8:16] carry
-output=concat8_8 a b
+output=multiplexer inputControl input[0] input[1]
+
+
+
+multiplexer<N=2,3,4,5,6,7,8>:
+
+output: out
+
+inputControl: in <N>
+input: in <2**N>
+
+a=multiplexer<N-1> inputControl[0:<N-1>] input[0:<2**N/2>]
+b=multiplexer<N-1> inputControl[0:<N-1>] input[<2**N/2>:<2**N>]
+output=multiplexer inputControl[<N-1>] a b
 
 
 
