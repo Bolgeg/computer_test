@@ -7,14 +7,14 @@ output=<NAME> input
 
 
 
-<NAME=not><N=2,4,8,16>:
+<NAME=not><N=2...16>:
 
 output: out <N>
 input: in <N>
 
-a=<NAME><N/2> input[0:<N/2>]
-b=<NAME><N/2> input[<N/2>:<N>]
-output=concat<N/2>_<N/2> a b
+a=<NAME><N-1> input[0:<N-1>]
+b=<NAME>1 input[<N-1>]
+output=concat<N-1>_1 a b
 
 
 
@@ -28,15 +28,39 @@ output=<NAME> inputA inputB
 
 
 
-<NAME=and,or,xor><N=2,4,8,16>:
+<NAME=and,or,xor><N=2...16>:
 
 output: out <N>
 inputA: in <N>
 inputB: in <N>
 
-a=<NAME><N/2> inputA[0:<N/2>] inputB[0:<N/2>]
-b=<NAME><N/2> inputA[<N/2>:<N>] inputB[<N/2>:<N>]
-output=concat<N/2>_<N/2> a b
+a=<NAME><N-1> inputA[0:<N-1>] inputB[0:<N-1>]
+b=<NAME>1 inputA[<N-1>] inputB[<N-1>]
+output=concat<N-1>_1 a b
+
+
+
+<NAME=andABC,orABC,xorABC>1:
+
+output: out
+inputA: in
+inputB: in
+inputC: in
+
+output=<NAME> inputA inputB inputC
+
+
+
+<NAME=andABC,orABC,xorABC><N=2...16>:
+
+output: out <N>
+inputA: in <N>
+inputB: in <N>
+inputC: in <N>
+
+a=<NAME><N-1> inputA[0:<N-1>] inputB[0:<N-1>] inputC[0:<N-1>]
+b=<NAME>1 inputA[<N-1>] inputB[<N-1>] inputC[<N-1>]
+output=concat<N-1>_1 a b
 
 
 
@@ -84,7 +108,7 @@ output=and a b
 
 
 
-andABC:
+<NAME=and,or,xor>ABC:
 
 output: out
 
@@ -92,34 +116,8 @@ inputA: in
 inputB: in
 inputC: in
 
-a=and inputA inputB
-output=and a inputC
-
-
-
-orABC:
-
-output: out
-
-inputA: in
-inputB: in
-inputC: in
-
-a=or inputA inputB
-output=or a inputC
-
-
-
-xorABC:
-
-output: out
-
-inputA: in
-inputB: in
-inputC: in
-
-a=xor inputA inputB
-output=xor a inputC
+a=<NAME> inputA inputB
+output=<NAME> a inputC
 
 
 
@@ -155,7 +153,7 @@ output outputCarry=add inputA inputB inputC
 
 
 
-add<N=2,4,8,16>:
+add<N=2...16>:
 
 output: out <N>
 outputCarry: out
@@ -164,9 +162,30 @@ inputA: in <N>
 inputB: in <N>
 inputCarry: in
 
-a carry=add<N/2> inputA[0:<N/2>] inputB[0:<N/2>] inputCarry
-b outputCarry=add<N/2> inputA[<N/2>:<N>] inputB[<N/2>:<N>] carry
-output=concat<N/2>_<N/2> a b
+a carry=add<N-1> inputA[0:<N-1>] inputB[0:<N-1>] inputCarry
+b outputCarry=add1 inputA[<N-1>] inputB[<N-1>] carry
+output=concat<N-1>_1 a b
+
+
+
+fanOutP0:
+
+output: out
+input: in
+
+output=set input
+
+
+
+fanOutP<N=1...16>:
+
+output: out <2**N>
+
+input: in
+
+a=fanOutP<N-1> input
+b=fanOutP<N-1> input
+output=concat<2**N/2>_<2**N/2> a b
 
 
 
@@ -185,6 +204,72 @@ output=nand a b
 
 
 
+demultiplexer:
+
+outputA: out
+outputB: out
+
+inputControl: in
+input: in
+
+inputControlNot=not inputControl
+outputA=and inputControlNot input
+outputB=and inputControl input
+
+
+
+demultiplexer1:
+
+output: out 2
+
+inputControl: in
+input: in
+
+a b=demultiplexer inputControl input
+output=concat1_1 a b
+
+
+
+demultiplexer<N=2...16>:
+
+output: out <2**N>
+
+inputControl: in <N>
+input: in
+
+ia ib=demultiplexer inputControl[<N-1>] input
+a=demultiplexer<N-1> inputControl[0:<N-1>] ia
+b=demultiplexer<N-1> inputControl[0:<N-1>] ib
+output=concat<2**N/2>_<2**N/2> a b
+
+
+
+multiplexerArrayP0:
+
+output: out
+
+inputControl: in
+inputA: in
+inputB: in
+
+output=multiplexer inputControl inputA inputB
+
+
+
+multiplexerArrayP<N=1...16>:
+
+output: out <2**N>
+
+inputControl: in <2**N>
+inputA: in <2**N>
+inputB: in <2**N>
+
+a=multiplexerArrayP<N-1> inputControl[0:<2**N/2>] inputA[0:<2**N/2>] inputB[0:<2**N/2>]
+b=multiplexerArrayP<N-1> inputControl[<2**N/2>:<2**N>] inputA[<2**N/2>:<2**N>] inputB[<2**N/2>:<2**N>]
+output=concat<2**N/2>_<2**N/2> a b
+
+
+
 multiplexer1:
 
 output: out
@@ -196,7 +281,7 @@ output=multiplexer inputControl input[0] input[1]
 
 
 
-multiplexer<N=2,3,4,5,6,7,8>:
+multiplexer<N=2...16>:
 
 output: out
 
@@ -206,6 +291,39 @@ input: in <2**N>
 a=multiplexer<N-1> inputControl[0:<N-1>] input[0:<2**N/2>]
 b=multiplexer<N-1> inputControl[0:<N-1>] input[<2**N/2>:<2**N>]
 output=multiplexer inputControl[<N-1>] a b
+
+
+
+addressableMemory<N=2...16>_1:
+
+output: out
+
+addressForOutput: in <N>
+inputEnable: in
+addressForInput: in <N>
+input: in
+
+memory: reg <2**N>
+
+output=multiplexer<N> addressForOutput memory
+memoryChange=demultiplexer<N> addressForInput inputEnable
+inputFannedOut=fanOutP<N> input
+memory=multiplexerArrayP<N> memoryChange memory inputFannedOut
+
+
+
+addressableMemory<ADDRESS=2...16>_<WORD=2,4,8,16>:
+
+output: out <WORD>
+
+addressForOutput: in <ADDRESS>
+inputEnable: in
+addressForInput: in <ADDRESS>
+input: in <WORD>
+
+a=addressableMemory<ADDRESS>_<WORD/2> addressForOutput inputEnable addressForInput input[0:<WORD/2>]
+b=addressableMemory<ADDRESS>_<WORD/2> addressForOutput inputEnable addressForInput input[<WORD/2>:<WORD>]
+output=concat<WORD/2>_<WORD/2> a b
 
 
 
@@ -219,7 +337,7 @@ input: in 16
 valueReg: reg 16
 
 outputEnable=set 1
-
-valueReg outputCarry=add16 input valueReg 0
-
+memoryValue=addressableMemory4_16 5 1 5 valueReg
+valueReg outputCarry=add16 input memoryValue 0
 output=set16 valueReg
+

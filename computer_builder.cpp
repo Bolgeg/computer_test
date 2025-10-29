@@ -204,17 +204,18 @@ class ComputerBuilder
 				{
 					if(outputLine.back()==' ') outputLine.resize(outputLine.size()-1);
 				}
-				lineIndexToOriginalLineIndex.push_back(originalLines.size());
 				originalLines.push_back(outputLine);
 			}
 			int resolveLineIndex(int lineIndex)
 			{
-				int resolvedLineIndex=lineIndex;
 				if(lineIndex>=0 && lineIndex<lineIndexToOriginalLineIndex.size())
 				{
-					resolvedLineIndex=lineIndexToOriginalLineIndex[lineIndex];
+					return lineIndexToOriginalLineIndex[lineIndex];
 				}
-				return resolvedLineIndex;
+				else
+				{
+					return 1000000+lineIndex;
+				}
 			}
 			string errorString(int errorCode,int lineIndex)
 			{
@@ -528,20 +529,47 @@ class ComputerBuilder
 							
 							vector<string> valuesStr=splitStringAtCommas(str.substr(equalSign+1,str.size()-(equalSign+1)));
 							
+							vector<string> values;
+							
 							if(valuesStr.size()==0) throw errorString(__LINE__,lineIndex);
 							for(int j=0;j<valuesStr.size();j++)
 							{
-								valuesStr[j]=trimString(valuesStr[j]);
-								if(valuesStr[j].size()==0) throw errorString(__LINE__,lineIndex);
-								for(int k=0;k<valuesStr[j].size();k++)
+								string value=trimString(valuesStr[j]);
+								if(value.size()==0) throw errorString(__LINE__,lineIndex);
+								for(int k=0;k<value.size();k++)
 								{
-									if(valuesStr[j][j]==' ') throw errorString(__LINE__,lineIndex);
+									if(value[k]==' ') throw errorString(__LINE__,lineIndex);
+								}
+								
+								string dotsString="...";
+								
+								size_t dots=value.find(dotsString);
+								if(dots!=string::npos)
+								{
+									string startStr=value.substr(0,dots);
+									string endStr=value.substr(dots+dotsString.size(),value.size()-(dots+dotsString.size()));
+									
+									int start=0;
+									int end=0;
+									if(!stringToIntSimple(startStr,start)) throw errorString(__LINE__,lineIndex);
+									if(!stringToIntSimple(endStr,end)) throw errorString(__LINE__,lineIndex);
+									
+									if(start>end) throw errorString(__LINE__,lineIndex);
+									
+									for(int number=start;number<=end;number++)
+									{
+										values.push_back(std::to_string(number));
+									}
+								}
+								else
+								{
+									values.push_back(value);
 								}
 							}
 							
 							if(findWithName(templateParameters,name)!=-1) throw errorString(__LINE__,lineIndex);
 							
-							templateParameters.emplace_back(name,valuesStr);
+							templateParameters.emplace_back(name,values);
 						}
 					}
 					
@@ -1139,7 +1167,7 @@ class ComputerBuilder
 				}
 			};
 			
-			vector<Computer::Input> getComputerInputs(const ComponentContext& context,const Component::Element::Input& elementInput)
+			vector<Computer::Input> getComputerInputs(const Component& component,const ComponentContext& context,const Component::Element::Input& elementInput)
 			{
 				vector<Computer::Input> computerInputs;
 				
@@ -1152,11 +1180,22 @@ class ComputerBuilder
 				}
 				else
 				{
-					const VariableData& variable=context.variables[elementInput.variableIndex];
+					const Component::Variable& variable=component.variables[elementInput.variableIndex];
+					const VariableData& variableData=context.variables[elementInput.variableIndex];
 					
-					for(int i=0;i<elementInput.sizeInBits;i++)
+					if(variable.type==Component::Variable::Type::reg)
 					{
-						computerInputs.push_back(variable.computerInputs[elementInput.variableOffsetInBits+i]);
+						for(int i=0;i<elementInput.sizeInBits;i++)
+						{
+							computerInputs.push_back(variableData.computerMemoryInputs[elementInput.variableOffsetInBits+i]);
+						}
+					}
+					else
+					{
+						for(int i=0;i<elementInput.sizeInBits;i++)
+						{
+							computerInputs.push_back(variableData.computerInputs[elementInput.variableOffsetInBits+i]);
+						}
 					}
 				}
 				
@@ -1225,8 +1264,8 @@ class ComputerBuilder
 					
 					if(element.type==Component::Element::Type::nand)
 					{
-						vector<Computer::Input> inputsA=getComputerInputs(context,element.inputs[0]);
-						vector<Computer::Input> inputsB=getComputerInputs(context,element.inputs[1]);
+						vector<Computer::Input> inputsA=getComputerInputs(component,context,element.inputs[0]);
+						vector<Computer::Input> inputsB=getComputerInputs(component,context,element.inputs[1]);
 						
 						vector<Computer::Input> inputsC;
 						
@@ -1241,14 +1280,14 @@ class ComputerBuilder
 					}
 					else if(element.type==Component::Element::Type::set)
 					{
-						vector<Computer::Input> inputs=getComputerInputs(context,element.inputs[0]);
+						vector<Computer::Input> inputs=getComputerInputs(component,context,element.inputs[0]);
 						
 						context.variables[element.outputs[0].variableIndex].computerInputs=inputs;
 					}
 					else if(element.type==Component::Element::Type::concat)
 					{
-						vector<Computer::Input> inputs=getComputerInputs(context,element.inputs[0]);
-						vector<Computer::Input> inputsToConcatenate=getComputerInputs(context,element.inputs[1]);
+						vector<Computer::Input> inputs=getComputerInputs(component,context,element.inputs[0]);
+						vector<Computer::Input> inputsToConcatenate=getComputerInputs(component,context,element.inputs[1]);
 						
 						inputs.insert(inputs.end(),inputsToConcatenate.begin(),inputsToConcatenate.end());
 						
@@ -1259,7 +1298,7 @@ class ComputerBuilder
 						vector<vector<Computer::Input>> inputs;
 						for(int i=0;i<element.inputs.size();i++)
 						{
-							inputs.push_back(getComputerInputs(context,element.inputs[i]));
+							inputs.push_back(getComputerInputs(component,context,element.inputs[i]));
 						}
 						
 						ComponentContext subcontext(context,inputs);
