@@ -144,10 +144,6 @@ class Computer
 		memory.emplace_back(memoryOutputGateInput);
 		return index;
 	}
-	void setMemory(int index,const Input& memoryOutputGateInput)
-	{
-		memory[index]=OutputGate(memoryOutputGateInput);
-	}
 	int addOutput(const Input& outputOutputGateInput)
 	{
 		int index=outputs.size();

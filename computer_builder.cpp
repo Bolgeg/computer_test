@@ -2,6 +2,162 @@ class ComputerBuilder
 {
 	public:
 	
+	class ComputerData
+	{
+		public:
+		
+		class Input
+		{
+			public:
+			
+			enum class Type{computerInput,computerMemory,nandGate,constant,yesGate};
+			
+			Type type=Type::constant;
+			int index=0;
+			
+			Input(){}
+			Input(const Type& _type,int _index)
+			{
+				type=_type;
+				index=_index;
+			}
+		};
+		
+		class YesGate
+		{
+			public:
+			
+			bool inputResolved=false;
+			Input input;
+			
+			void setInput(const Input& _input)
+			{
+				inputResolved=true;
+				input=_input;
+			}
+		};
+		
+		class OutputGate
+		{
+			public:
+			
+			Input input;
+			
+			OutputGate(){}
+			explicit OutputGate(const Input& _input)
+			{
+				input=_input;
+			}
+		};
+		
+		class NandGate
+		{
+			public:
+			
+			Input inputA;
+			Input inputB;
+			
+			int lineIndexesIndex=-1;
+			
+			NandGate(){}
+			NandGate(const Input& _inputA,const Input& _inputB)
+			{
+				inputA=_inputA;
+				inputB=_inputB;
+			}
+		};
+		
+		int numberOfInputs=0;
+		vector<NandGate> nandGates;
+		vector<OutputGate> memory;
+		vector<OutputGate> outputs;
+		vector<YesGate> yesGates;
+		
+		vector<vector<int>> nandGates_lineIndexes_array;
+		
+		int addInputs(int count)
+		{
+			int index=numberOfInputs;
+			numberOfInputs+=count;
+			return index;
+		}
+		int addInput()
+		{
+			return addInputs(1);
+		}
+		int addNandGate(const NandGate& nandGate)
+		{
+			int index=nandGates.size();
+			nandGates.push_back(nandGate);
+			return index;
+		}
+		int addMemory(const Input& memoryOutputGateInput)
+		{
+			int index=memory.size();
+			memory.emplace_back(memoryOutputGateInput);
+			return index;
+		}
+		void setMemory(int index,const Input& memoryOutputGateInput)
+		{
+			memory[index]=OutputGate(memoryOutputGateInput);
+		}
+		int addOutput(const Input& outputOutputGateInput)
+		{
+			int index=outputs.size();
+			outputs.emplace_back(outputOutputGateInput);
+			return index;
+		}
+		int addYesGate(const YesGate& yesGate)
+		{
+			int index=yesGates.size();
+			yesGates.push_back(yesGate);
+			return index;
+		}
+		void setYesGateInput(int index,const Input& yesGateInput)
+		{
+			yesGates[index].setInput(yesGateInput);
+		}
+		
+		private:
+			Computer::Input getComputerInput(const Input& input)
+			{
+				Computer::Input::Type type=Computer::Input::Type::computerInput;
+				if(input.type==Input::Type::computerInput){}
+				else if(input.type==Input::Type::computerMemory) type=Computer::Input::Type::computerMemory;
+				else if(input.type==Input::Type::nandGate) type=Computer::Input::Type::nandGate;
+				else if(input.type==Input::Type::constant) type=Computer::Input::Type::constant;
+				else
+				{
+					throw string("Error: Invalid gate for final computer");
+				}
+				
+				return Computer::Input(type,input.index);
+			}
+		public:
+		Computer getComputer()
+		{
+			Computer computer;
+			
+			computer.addInputs(numberOfInputs);
+			for(int i=0;i<nandGates.size();i++)
+			{
+				computer.addNandGate(Computer::NandGate(getComputerInput(nandGates[i].inputA),getComputerInput(nandGates[i].inputB)));
+			}
+			for(int i=0;i<memory.size();i++)
+			{
+				computer.addMemory(getComputerInput(memory[i].input));
+			}
+			for(int i=0;i<outputs.size();i++)
+			{
+				computer.addOutput(getComputerInput(outputs[i].input));
+			}
+			
+			if(yesGates.size()>0) throw string("Error: Invalid gate for final computer");
+			
+			return computer;
+		}
+	};
+	
 	class Code
 	{
 		public:
@@ -22,12 +178,16 @@ class ComputerBuilder
 				string name;
 				int sizeInBits=1;
 				
+				int lineIndex=-1;
+				
 				Variable(){}
-				Variable(const Type& _type,const string& _name,int _sizeInBits)
+				Variable(const Type& _type,const string& _name,int _sizeInBits,int _lineIndex)
 				{
 					type=_type;
 					name=_name;
 					sizeInBits=_sizeInBits;
+					
+					lineIndex=_lineIndex;
 				}
 			};
 			
@@ -98,14 +258,18 @@ class ComputerBuilder
 				vector<Output> outputs;
 				vector<Input> inputs;
 				
+				int lineIndex=-1;
+				
 				Element(){}
-				Element(const Type& _type,const string& _componentName,int _componentIndex,const vector<Output>& _outputs,const vector<Input>& _inputs)
+				Element(const Type& _type,const string& _componentName,int _componentIndex,const vector<Output>& _outputs,const vector<Input>& _inputs,
+					int _lineIndex)
 				{
 					type=_type;
 					componentName=_componentName;
 					componentIndex=_componentIndex;
 					outputs=_outputs;
 					inputs=_inputs;
+					lineIndex=_lineIndex;
 				}
 			};
 			
@@ -731,7 +895,7 @@ class ComputerBuilder
 				else if(typeString=="reg") type=Component::Variable::Type::reg;
 				else throw errorString(__LINE__,lineIndex);
 				
-				components.back().variables.emplace_back(type,name,sizeInBits);
+				components.back().variables.emplace_back(type,name,sizeInBits,lineIndex);
 				
 				if(type==Component::Variable::Type::input) components.back().inputs.emplace_back(name,sizeInBits);
 				else if(type==Component::Variable::Type::output) components.back().outputs.emplace_back(name,sizeInBits);
@@ -822,11 +986,47 @@ class ComputerBuilder
 				return false;
 			}
 			
+			class AssignmentLineData
+			{
+				public:
+				
+				int lineIndex=-1;
+				vector<string> outputs;
+				string componentName;
+				vector<string> inputs;
+				
+				Component::Element::Type type;
+				int componentIndex=-1;
+				
+				vector<int> outputSizes;
+				vector<int> inputSizes;
+				
+				vector<int> outputVariableIndexes;
+				
+				AssignmentLineData(){}
+				AssignmentLineData(int _lineIndex,const vector<string>& _outputs,const string& _componentName,const vector<string>& _inputs,
+					const Component::Element::Type& _type,int _componentIndex,const vector<int>& _outputSizes,const vector<int>& _inputSizes,
+					const vector<int>& _outputVariableIndexes)
+				{
+					lineIndex=_lineIndex;
+					outputs=_outputs;
+					componentName=_componentName;
+					inputs=_inputs;
+					type=_type;
+					componentIndex=_componentIndex;
+					outputSizes=_outputSizes;
+					inputSizes=_inputSizes;
+					outputVariableIndexes=_outputVariableIndexes;
+				}
+			};
+			
 			void processComponents()
 			{
 				for(int thisComponentIndex=0;thisComponentIndex<components.size();thisComponentIndex++)
 				{
 					Component& component=components[thisComponentIndex];
+					
+					vector<AssignmentLineData> assignmentLines;
 					
 					for(int lineIndex=component.firstLine;lineIndex<=component.lastLine;lineIndex++)
 					{
@@ -854,10 +1054,7 @@ class ComputerBuilder
 							if(!isValidIdentifier(componentName)) throw errorString(__LINE__,lineIndex);
 							
 							
-							bool isNand=false;
-							bool isSet=false;
-							bool isConcat=false;
-							bool isComponent=false;
+							Component::Element::Type elementType=Component::Element::Type::nand;
 							
 							vector<int> outputSizes;
 							vector<int> inputSizes;
@@ -866,7 +1063,7 @@ class ComputerBuilder
 							
 							if(componentName=="nand")
 							{
-								isNand=true;
+								elementType=Component::Element::Type::nand;
 								outputSizes=vector<int>{1};
 								inputSizes=vector<int>{1,1};
 							}
@@ -875,7 +1072,7 @@ class ComputerBuilder
 								int set_sizeInBits=getSetSizeInBits(componentName);
 								if(set_sizeInBits!=-1)
 								{
-									isSet=true;
+									elementType=Component::Element::Type::set;
 									outputSizes=vector<int>{set_sizeInBits};
 									inputSizes=vector<int>{set_sizeInBits};
 								}
@@ -885,13 +1082,13 @@ class ComputerBuilder
 									int concat_sizeB=-1;
 									if(getConcatSizeInBits(componentName,concat_sizeA,concat_sizeB))
 									{
-										isConcat=true;
+										elementType=Component::Element::Type::concat;
 										outputSizes=vector<int>{concat_sizeA+concat_sizeB};
 										inputSizes=vector<int>{concat_sizeA,concat_sizeB};
 									}
 									else
 									{
-										isComponent=true;
+										elementType=Component::Element::Type::component;
 										
 										componentIndex=findWithName(components,componentName);
 										if(componentIndex==-1 || componentIndex==thisComponentIndex) throw errorString(__LINE__,lineIndex);
@@ -934,133 +1131,188 @@ class ComputerBuilder
 								{
 									outputVariableIndexes.push_back(component.variables.size());
 									
-									component.variables.emplace_back(Component::Variable::Type::intermediate,name,outputSizes[i]);
+									component.variables.emplace_back(Component::Variable::Type::intermediate,name,outputSizes[i],lineIndex);
 								}
 							}
 							
-							
-							Component::Element::Type elementType=Component::Element::Type::component;
-							if(isNand) elementType=Component::Element::Type::nand;
-							else if(isSet) elementType=Component::Element::Type::set;
-							else if(isConcat) elementType=Component::Element::Type::concat;
-							else if(isComponent){}
-							
-							vector<Component::Element::Output> elementOutputs;
 							for(int i=0;i<outputVariableIndexes.size();i++)
 							{
-								elementOutputs.emplace_back(outputVariableIndexes[i]);
+								for(int j=i+1;j<outputVariableIndexes.size();j++)
+								{
+									if(outputVariableIndexes[i]==outputVariableIndexes[j])
+									{
+										throw errorString(__LINE__,lineIndex);
+									}
+								}
 							}
 							
-							vector<Component::Element::Input> elementInputs;
-							for(int i=0;i<inputs.size();i++)
+							assignmentLines.emplace_back(lineIndex,outputs,componentName,inputs,
+								elementType,componentIndex,outputSizes,inputSizes,outputVariableIndexes);
+						}
+					}
+					
+					for(int assignmentLineIndex=0;assignmentLineIndex<assignmentLines.size();assignmentLineIndex++)
+					{
+						AssignmentLineData& assignmentLine=assignmentLines[assignmentLineIndex];
+						
+						int lineIndex=assignmentLine.lineIndex;
+						
+						vector<Component::Element::Output> elementOutputs;
+						for(int i=0;i<assignmentLine.outputVariableIndexes.size();i++)
+						{
+							elementOutputs.emplace_back(assignmentLine.outputVariableIndexes[i]);
+						}
+						
+						vector<Component::Element::Input> elementInputs;
+						for(int i=0;i<assignmentLine.inputs.size();i++)
+						{
+							string str=assignmentLine.inputs[i];
+							
+							if(str.size()>0)
 							{
-								string str=inputs[i];
-								
-								if(str.size()>0)
+								if(str[0]>='0' && str[0]<='9' || str[0]=='-')
 								{
-									if(str[0]>='0' && str[0]<='9' || str[0]=='-')
+									int constant=0;
+									
+									try
 									{
-										int constant=0;
+										size_t p=0;
+										constant=std::stoi(str,&p,0);
+										if(p!=str.size()) throw 1;
+									}
+									catch(...)
+									{
+										throw errorString(__LINE__,lineIndex);
+									}
+									
+									int inputSize=assignmentLine.inputSizes[i];
+									
+									if(inputSize<32)
+									{
+										int minimumSignedNegative=-(uint32_t(1)<<(inputSize-1));
+										int maximumUnsignedPositive=(uint32_t(1)<<inputSize)-1;
 										
-										try
-										{
-											size_t p=0;
-											constant=std::stoi(str,&p,0);
-											if(p!=str.size()) throw 1;
-										}
-										catch(...)
+										if(constant<minimumSignedNegative || constant>maximumUnsignedPositive)
 										{
 											throw errorString(__LINE__,lineIndex);
 										}
-										
-										elementInputs.emplace_back(true,constant,0,inputSizes[i]);
-										
-										continue;
-									}
-								}
-								
-								int offset=0;
-								int size=-1;
-								
-								string name=str;
-								
-								size_t bracket=str.find_first_of("[");
-								if(bracket!=string::npos)
-								{
-									name=str.substr(0,bracket);
-									
-									if(str.back()!=']') throw errorString(__LINE__,lineIndex);
-									
-									string bracketContent=str.substr(bracket+1,(str.size()-1)-(bracket+1));
-									
-									vector<string> numbers=splitStringAtColons(bracketContent);
-									
-									if(numbers.size()==0) throw errorString(__LINE__,lineIndex);
-									
-									if(numbers[0].size()==0) throw errorString(__LINE__,lineIndex);
-									if(!stringToIntSimple(numbers[0],offset)) throw errorString(__LINE__,lineIndex);
-									if(offset<0) throw errorString(__LINE__,lineIndex);
-									
-									size=1;
-									if(numbers.size()>1)
-									{
-										int offsetB=0;
-										if(numbers[1].size()==0) throw errorString(__LINE__,lineIndex);
-										if(!stringToIntSimple(numbers[1],offsetB)) throw errorString(__LINE__,lineIndex);
-										
-										size=offsetB-offset;
-										
-										if(size<=0) throw errorString(__LINE__,lineIndex);
 									}
 									
-									if(numbers.size()>2) throw errorString(__LINE__,lineIndex);
+									elementInputs.emplace_back(true,constant,0,inputSize);
+									
+									continue;
 								}
-								
-								if(!isValidIdentifier(name)) throw errorString(__LINE__,lineIndex);
-								
-								int variableIndex=findWithName(component.variables,name);
-								if(variableIndex==-1) throw errorString(__LINE__,lineIndex);
-								
-								int variableSize=component.variables[variableIndex].sizeInBits;
-								if(size==-1) size=variableSize;
-								
-								
-								if(offset+size>variableSize) throw errorString(__LINE__,lineIndex);
-								
-								if(size!=inputSizes[i]) throw errorString(__LINE__,lineIndex);
-								
-								
-								if(component.variables[variableIndex].type==Component::Variable::Type::output)
-								{
-									throw errorString(__LINE__,lineIndex);
-								}
-								
-								
-								elementInputs.emplace_back(false,variableIndex,offset,inputSizes[i]);
 							}
+							
+							int offset=0;
+							int size=-1;
+							
+							string name=str;
+							
+							size_t bracket=str.find_first_of("[");
+							if(bracket!=string::npos)
+							{
+								name=str.substr(0,bracket);
+								
+								if(str.back()!=']') throw errorString(__LINE__,lineIndex);
+								
+								string bracketContent=str.substr(bracket+1,(str.size()-1)-(bracket+1));
+								
+								vector<string> numbers=splitStringAtColons(bracketContent);
+								
+								if(numbers.size()==0) throw errorString(__LINE__,lineIndex);
+								
+								if(numbers[0].size()==0) throw errorString(__LINE__,lineIndex);
+								if(!stringToIntSimple(numbers[0],offset)) throw errorString(__LINE__,lineIndex);
+								if(offset<0) throw errorString(__LINE__,lineIndex);
+								
+								size=1;
+								if(numbers.size()>1)
+								{
+									int offsetB=0;
+									if(numbers[1].size()==0) throw errorString(__LINE__,lineIndex);
+									if(!stringToIntSimple(numbers[1],offsetB)) throw errorString(__LINE__,lineIndex);
+									
+									size=offsetB-offset;
+									
+									if(size<=0) throw errorString(__LINE__,lineIndex);
+								}
+								
+								if(numbers.size()>2) throw errorString(__LINE__,lineIndex);
+							}
+							
+							if(!isValidIdentifier(name)) throw errorString(__LINE__,lineIndex);
+							
+							int variableIndex=findWithName(component.variables,name);
+							if(variableIndex==-1) throw errorString(__LINE__,lineIndex);
+							
+							int variableSize=component.variables[variableIndex].sizeInBits;
+							if(size==-1) size=variableSize;
+							
+							
+							if(offset+size>variableSize) throw errorString(__LINE__,lineIndex);
+							
+							if(size!=assignmentLine.inputSizes[i]) throw errorString(__LINE__,lineIndex);
+							
+							
+							if(component.variables[variableIndex].type==Component::Variable::Type::output)
+							{
+								throw errorString(__LINE__,lineIndex);
+							}
+							
+							
+							elementInputs.emplace_back(false,variableIndex,offset,assignmentLine.inputSizes[i]);
+						}
+						
+						for(int e=0;e<component.elements.size();e++)
+						{
+							Component::Element& element=component.elements[e];
+							for(int i=0;i<element.outputs.size();i++)
+							{
+								for(int j=0;j<elementOutputs.size();j++)
+								{
+									if(elementOutputs[j].variableIndex==element.outputs[i].variableIndex)
+									{
+										throw errorString(__LINE__,lineIndex);
+									}
+								}
+							}
+						}
+						
+						component.elements.emplace_back(
+							assignmentLine.type,
+							assignmentLine.type==Component::Element::Type::component ? assignmentLine.componentName : string(),
+							assignmentLine.componentIndex,
+							elementOutputs,
+							elementInputs,
+							lineIndex
+							);
+					}
+					
+					for(int v=0;v<component.variables.size();v++)
+					{
+						Component::Variable& variable=component.variables[v];
+						
+						if(variable.type==Component::Variable::Type::output)
+						{
+							bool found=false;
 							
 							for(int e=0;e<component.elements.size();e++)
 							{
 								Component::Element& element=component.elements[e];
-								for(int i=0;i<element.outputs.size();i++)
+								
+								for(int j=0;j<element.outputs.size();j++)
 								{
-									for(int j=0;j<elementOutputs.size();j++)
+									if(element.outputs[j].variableIndex==v)
 									{
-										if(elementOutputs[j].variableIndex==element.outputs[i].variableIndex)
-										{
-											throw errorString(__LINE__,lineIndex);
-										}
+										found=true;
+										break;
 									}
 								}
+								if(found) break;
 							}
 							
-							component.elements.emplace_back(
-								elementType,
-								elementType==Component::Element::Type::component ? componentName : string(),
-								componentIndex,
-								elementOutputs,
-								elementInputs
-								);
+							if(!found) throw errorString(__LINE__,variable.lineIndex);
 						}
 					}
 				}
@@ -1135,15 +1387,8 @@ class ComputerBuilder
 			{
 				public:
 				
-				vector<Computer::Input> computerInputs;
-				vector<Computer::Input> computerMemoryInputs;
-				
-				VariableData(){}
-				explicit VariableData(int sizeInBits)
-				{
-					computerInputs=vector<Computer::Input>(sizeInBits);
-					computerMemoryInputs=vector<Computer::Input>(sizeInBits);
-				}
+				vector<ComputerData::Input> computerInputs;
+				vector<ComputerData::Input> computerMemoryInputs;
 			};
 			
 			class ComponentContext
@@ -1152,30 +1397,35 @@ class ComputerBuilder
 				
 				int level=0;
 				
-				vector<vector<Computer::Input>> inputs;
+				vector<vector<ComputerData::Input>> inputs;
 				
-				vector<vector<Computer::Input>> outputs;
+				vector<vector<ComputerData::Input>> outputs;
 				
 				vector<VariableData> variables;
 				
+				vector<int> lineIndexes;
+				
 				ComponentContext(){}
-				ComponentContext(const ComponentContext& parent,const vector<vector<Computer::Input>>& _inputs)
+				ComponentContext(const ComponentContext& parent,const vector<vector<ComputerData::Input>>& _inputs,int elementLineIndex)
 				{
 					level=parent.level+1;
 					
 					inputs=_inputs;
+					
+					lineIndexes=parent.lineIndexes;
+					lineIndexes.push_back(elementLineIndex);
 				}
 			};
 			
-			vector<Computer::Input> getComputerInputs(const Component& component,const ComponentContext& context,const Component::Element::Input& elementInput)
+			vector<ComputerData::Input> getComputerInputs(const Component& component,const ComponentContext& context,const Component::Element::Input& elementInput)
 			{
-				vector<Computer::Input> computerInputs;
+				vector<ComputerData::Input> computerInputs;
 				
 				if(elementInput.isConstant)
 				{
 					for(int i=0;i<elementInput.sizeInBits;i++)
 					{
-						computerInputs.emplace_back(Computer::Input::Type::constant,(uint64_t(elementInput.constantValue)>>i)&1);
+						computerInputs.emplace_back(ComputerData::Input::Type::constant,(uint64_t(elementInput.constantValue)>>i)&1);
 					}
 				}
 				else
@@ -1202,59 +1452,82 @@ class ComputerBuilder
 				return computerInputs;
 			}
 			
-			void compileComponent(Computer& computer,int thisComponentIndex,ComponentContext& context)
+			void setVariableInputs(ComputerData& computer,ComponentContext& context,int variableIndex,const vector<ComputerData::Input>& inputs)
 			{
-				Component& component=components[thisComponentIndex];
-				
-				for(int i=0;i<component.variables.size();i++)
+				vector<ComputerData::Input>& computerInputs=context.variables[variableIndex].computerInputs;
+				for(int i=0;i<computerInputs.size();i++)
 				{
-					Component::Variable& variable=component.variables[i];
+					ComputerData::Input& input=computerInputs[i];
 					
-					context.variables.emplace_back(variable.sizeInBits);
-				}
-				
-				for(int i=0;i<component.inputs.size();i++)
-				{
-					vector<Computer::Input> inputs;
-					
-					if(context.level==0)
+					if(input.type==ComputerData::Input::Type::yesGate)
 					{
-						int size=component.inputs[i].sizeInBits;
-						int inputIndex=computer.addInputs(size);
-						
-						for(int j=0;j<size;j++)
-						{
-							inputs.emplace_back(Computer::Input::Type::computerInput,inputIndex+j);
-						}
+						computer.setYesGateInput(input.index,inputs[i]);
 					}
 					else
 					{
-						inputs=context.inputs[i];
+						throw string("Internal error: written two times to the same variable (conflict)");
 					}
-					
-					int variableIndex=findWithName(component.variables,component.inputs[i].name);
-					context.variables[variableIndex].computerInputs=inputs;
 				}
 				
-				for(int i=0;i<component.variables.size();i++)
+				computerInputs=inputs;
+			}
+			
+			void addLineIndexesToNandGate(ComputerData& computer,int nandGateIndex,const vector<int>& lineIndexes)
+			{
+				computer.nandGates[nandGateIndex].lineIndexesIndex=computer.nandGates_lineIndexes_array.size();
+				computer.nandGates_lineIndexes_array.push_back(lineIndexes);
+			}
+			
+			void compileComponent(ComputerData& computer,int thisComponentIndex,ComponentContext& context)
+			{
+				Component& component=components[thisComponentIndex];
+				
+				for(int i=0,inputIndex=0;i<component.variables.size();i++)
 				{
 					Component::Variable& variable=component.variables[i];
 					
-					if(variable.type==Component::Variable::Type::reg)
 					{
-						vector<Computer::Input> inputs;
-						
-						int size=variable.sizeInBits;
-						
-						for(int j=0;j<size;j++)
+						VariableData variableData;
+						for(int j=0;j<variable.sizeInBits;j++)
 						{
-							int index=computer.addMemory(Computer::Input());
-							inputs.emplace_back(Computer::Input::Type::computerMemory,index);
+							variableData.computerInputs.emplace_back(ComputerData::Input::Type::yesGate,computer.addYesGate(ComputerData::YesGate()));
+						}
+						context.variables.push_back(variableData);
+					}
+					
+					if(variable.type==Component::Variable::Type::input)
+					{
+						vector<ComputerData::Input> inputs;
+						
+						if(context.level==0)
+						{
+							int index=computer.addInputs(variable.sizeInBits);
+							
+							for(int j=0;j<variable.sizeInBits;j++)
+							{
+								inputs.emplace_back(ComputerData::Input::Type::computerInput,index+j);
+							}
+						}
+						else
+						{
+							inputs=context.inputs[inputIndex];
+						}
+						
+						setVariableInputs(computer,context,i,inputs);
+						
+						inputIndex++;
+					}
+					else if(variable.type==Component::Variable::Type::reg)
+					{
+						vector<ComputerData::Input> inputs;
+						
+						for(int j=0;j<variable.sizeInBits;j++)
+						{
+							int index=computer.addMemory(ComputerData::Input());
+							inputs.emplace_back(ComputerData::Input::Type::computerMemory,index);
 						}
 						
 						context.variables[i].computerMemoryInputs=inputs;
-						
-						context.variables[i].computerInputs=inputs;
 					}
 				}
 				
@@ -1264,50 +1537,55 @@ class ComputerBuilder
 					
 					if(element.type==Component::Element::Type::nand)
 					{
-						vector<Computer::Input> inputsA=getComputerInputs(component,context,element.inputs[0]);
-						vector<Computer::Input> inputsB=getComputerInputs(component,context,element.inputs[1]);
+						vector<ComputerData::Input> inputsA=getComputerInputs(component,context,element.inputs[0]);
+						vector<ComputerData::Input> inputsB=getComputerInputs(component,context,element.inputs[1]);
 						
-						vector<Computer::Input> inputsC;
+						vector<ComputerData::Input> inputsC;
+						
+						vector<int> lineIndexes=context.lineIndexes;
+						lineIndexes.push_back(element.lineIndex);
 						
 						for(int i=0;i<inputsA.size() && i<inputsB.size();i++)
 						{
-							int nandGateIndex=computer.addNandGate(Computer::NandGate(inputsA[i],inputsB[i]));
+							int nandGateIndex=computer.addNandGate(ComputerData::NandGate(inputsA[i],inputsB[i]));
 							
-							inputsC.emplace_back(Computer::Input::Type::nandGate,nandGateIndex);
+							inputsC.emplace_back(ComputerData::Input::Type::nandGate,nandGateIndex);
+							
+							addLineIndexesToNandGate(computer,nandGateIndex,lineIndexes);
 						}
 						
-						context.variables[element.outputs[0].variableIndex].computerInputs=inputsC;
+						setVariableInputs(computer,context,element.outputs[0].variableIndex,inputsC);
 					}
 					else if(element.type==Component::Element::Type::set)
 					{
-						vector<Computer::Input> inputs=getComputerInputs(component,context,element.inputs[0]);
+						vector<ComputerData::Input> inputs=getComputerInputs(component,context,element.inputs[0]);
 						
-						context.variables[element.outputs[0].variableIndex].computerInputs=inputs;
+						setVariableInputs(computer,context,element.outputs[0].variableIndex,inputs);
 					}
 					else if(element.type==Component::Element::Type::concat)
 					{
-						vector<Computer::Input> inputs=getComputerInputs(component,context,element.inputs[0]);
-						vector<Computer::Input> inputsToConcatenate=getComputerInputs(component,context,element.inputs[1]);
+						vector<ComputerData::Input> inputs=getComputerInputs(component,context,element.inputs[0]);
+						vector<ComputerData::Input> inputsToConcatenate=getComputerInputs(component,context,element.inputs[1]);
 						
 						inputs.insert(inputs.end(),inputsToConcatenate.begin(),inputsToConcatenate.end());
 						
-						context.variables[element.outputs[0].variableIndex].computerInputs=inputs;
+						setVariableInputs(computer,context,element.outputs[0].variableIndex,inputs);
 					}
 					else if(element.type==Component::Element::Type::component)
 					{
-						vector<vector<Computer::Input>> inputs;
+						vector<vector<ComputerData::Input>> inputs;
 						for(int i=0;i<element.inputs.size();i++)
 						{
 							inputs.push_back(getComputerInputs(component,context,element.inputs[i]));
 						}
 						
-						ComponentContext subcontext(context,inputs);
+						ComponentContext subcontext(context,inputs,element.lineIndex);
 						
 						compileComponent(computer,element.componentIndex,subcontext);
 						
 						for(int i=0;i<element.outputs.size();i++)
 						{
-							context.variables[element.outputs[i].variableIndex].computerInputs=subcontext.outputs[i];
+							setVariableInputs(computer,context,element.outputs[i].variableIndex,subcontext.outputs[i]);
 						}
 					}
 				}
@@ -1323,25 +1601,210 @@ class ComputerBuilder
 							computer.setMemory(context.variables[i].computerMemoryInputs[j].index,context.variables[i].computerInputs[j]);
 						}
 					}
-				}
-				
-				for(int i=0;i<component.outputs.size();i++)
-				{
-					int variableIndex=findWithName(component.variables,component.outputs[i].name);
-					vector<Computer::Input> inputs=context.variables[variableIndex].computerInputs;
-					
-					if(context.level==0)
+					else if(variable.type==Component::Variable::Type::output)
 					{
-						for(int j=0;j<inputs.size();j++)
+						vector<ComputerData::Input> inputs=context.variables[i].computerInputs;
+						
+						if(context.level==0)
 						{
-							computer.addOutput(inputs[j]);
+							for(int j=0;j<inputs.size();j++)
+							{
+								computer.addOutput(inputs[j]);
+							}
+						}
+						
+						context.outputs.push_back(inputs);
+					}
+				}
+			}
+			void redirectThroughYesGates(const ComputerData& computer,ComputerData::Input& input)
+			{
+				while(input.type==ComputerData::Input::Type::yesGate)
+				{
+					const ComputerData::YesGate& yesGate=computer.yesGates[input.index];
+					if(!yesGate.inputResolved)
+					{
+						throw string("Internal error: yesGate not resolved");
+					}
+					input=yesGate.input;
+				}
+			}
+			void optimizeYesGatesAway(ComputerData& computer)
+			{
+				for(int i=0;i<computer.nandGates.size();i++)
+				{
+					redirectThroughYesGates(computer,computer.nandGates[i].inputA);
+					redirectThroughYesGates(computer,computer.nandGates[i].inputB);
+				}
+				for(int i=0;i<computer.memory.size();i++)
+				{
+					redirectThroughYesGates(computer,computer.memory[i].input);
+				}
+				for(int i=0;i<computer.outputs.size();i++)
+				{
+					redirectThroughYesGates(computer,computer.outputs[i].input);
+				}
+				computer.yesGates.resize(0);
+			}
+			void reorderNandGates(ComputerData& computer)
+			{
+				vector<int> order(computer.nandGates.size(),-1);
+				int orderedCount=0;
+				
+				for(;;)
+				{
+					int orderedCountOld=orderedCount;
+					for(int i=0;i<computer.nandGates.size();i++)
+					{
+						if(order[i]==-1)
+						{
+							ComputerData::NandGate& nandGate=computer.nandGates[i];
+							if(nandGate.inputA.type==ComputerData::Input::Type::nandGate)
+							{
+								if(order[nandGate.inputA.index]==-1) continue;
+							}
+							if(nandGate.inputB.type==ComputerData::Input::Type::nandGate)
+							{
+								if(order[nandGate.inputB.index]==-1) continue;
+							}
+							
+							order[i]=orderedCount;
+							orderedCount++;
 						}
 					}
 					
-					context.outputs.push_back(inputs);
+					if(orderedCount==computer.nandGates.size()) break;
+					else if(orderedCount==orderedCountOld)
+					{
+						string str;
+						int count=0;
+						vector<vector<int>> otherLineIndexes;
+						for(int i=0;i<computer.nandGates.size();i++)
+						{
+							if(order[i]==-1)
+							{
+								int lineIndexesIndex=computer.nandGates[i].lineIndexesIndex;
+								if(lineIndexesIndex==-1)
+								{
+									str+="Unknown lines\n";
+									count++;
+									continue;
+								}
+								
+								vector<int> lineIndexes=computer.nandGates_lineIndexes_array[lineIndexesIndex];
+								bool valid=true;
+								for(int j=0;j<lineIndexes.size();j++)
+								{
+									int lineIndex=lineIndexes[j];
+									if(lineIndex<0 || lineIndex>=lines.size())
+									{
+										valid=false;
+										break;
+									}
+								}
+								if(!valid)
+								{
+									str+="Unknown lines\n";
+									count++;
+									continue;
+								}
+								
+								bool sameLines=false;
+								for(int j=0;j<otherLineIndexes.size();j++)
+								{
+									if(otherLineIndexes[j].size()!=lineIndexes.size()) continue;
+									bool equal=true;
+									for(int k=0;k<lineIndexes.size();k++)
+									{
+										if(otherLineIndexes[j][k]!=lineIndexes[k])
+										{
+											equal=false;
+											break;
+										}
+									}
+									if(equal)
+									{
+										sameLines=true;
+										break;
+									}
+								}
+								if(sameLines) continue;
+								otherLineIndexes.push_back(lineIndexes);
+								
+								if(count>=10)
+								{
+									str+="...";
+									break;
+								}
+								
+								str+="\n";
+								
+								for(int j=0;j<lineIndexes.size();j++)
+								{
+									int lineIndex=lineIndexes[j];
+									int originalLineIndex=resolveLineIndex(lineIndex);
+									
+									if(j==0) str+="At ";
+									else str+="from ";
+									
+									str+=std::to_string(originalLineIndex+1)+": "+originalLines[originalLineIndex];
+									
+									if(originalLines[originalLineIndex]!=lines[lineIndex])
+									{
+										str+=string("  ->  ")+lines[lineIndex];
+									}
+									
+									str+="\n";
+								}
+								
+								str+="\n";
+								
+								count++;
+							}
+						}
+						throw string("Error: nand gate loops. Showing first nand gates with non resolvable inputs:\n")+str;
+					}
+				}
+				
+				vector<ComputerData::NandGate> newNandGates(computer.nandGates.size());
+				for(int i=0;i<computer.nandGates.size();i++)
+				{
+					ComputerData::NandGate nandGate=computer.nandGates[i];
+					
+					if(nandGate.inputA.type==ComputerData::Input::Type::nandGate)
+					{
+						nandGate.inputA.index=order[nandGate.inputA.index];
+					}
+					if(nandGate.inputB.type==ComputerData::Input::Type::nandGate)
+					{
+						nandGate.inputB.index=order[nandGate.inputB.index];
+					}
+					
+					newNandGates[order[i]]=nandGate;
+				}
+				
+				computer.nandGates=newNandGates;
+				
+				for(int i=0;i<computer.memory.size();i++)
+				{
+					ComputerData::OutputGate& memory=computer.memory[i];
+					
+					if(memory.input.type==ComputerData::Input::Type::nandGate)
+					{
+						memory.input.index=order[memory.input.index];
+					}
+				}
+				for(int i=0;i<computer.outputs.size();i++)
+				{
+					ComputerData::OutputGate& output=computer.outputs[i];
+					
+					if(output.input.type==ComputerData::Input::Type::nandGate)
+					{
+						output.input.index=order[output.input.index];
+					}
 				}
 			}
-			void compileComponents(Computer& computer)
+			void compileComponents(ComputerData& computer)
 			{
 				int mainComponentIndex=findWithName(components,"main");
 				if(mainComponentIndex==-1) throw string("Error: 'main' component not found");
@@ -1349,6 +1812,10 @@ class ComputerBuilder
 				ComponentContext context;
 				
 				compileComponent(computer,mainComponentIndex,context);
+				
+				optimizeYesGatesAway(computer);
+				
+				reorderNandGates(computer);
 			}
 		public:
 		Computer compile()
@@ -1361,10 +1828,10 @@ class ComputerBuilder
 			
 			checkRecursivity();
 			
-			Computer computer;
+			ComputerData computer;
 			compileComponents(computer);
 			
-			return computer;
+			return computer.getComputer();
 		}
 	};
 	

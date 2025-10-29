@@ -327,6 +327,20 @@ output=concat<WORD/2>_<WORD/2> a b
 
 
 
+test:
+
+output: out
+
+input: in
+
+b=set8 0
+c=set 0
+a=addressableMemory8_16 b c b a
+
+output outputB=demultiplexer 0 1
+
+
+
 main:
 
 output: out 16
@@ -336,8 +350,10 @@ input: in 16
 
 valueReg: reg 16
 
-outputEnable=set 1
-memoryValue=addressableMemory4_16 5 1 5 valueReg
-valueReg outputCarry=add16 input memoryValue 0
-output=set16 valueReg
 
+valueReg outputCarry=add16 input valueReg 0
+
+inputPlusSomething inputPlusSomethingCarry=add16 input 4 0
+output=addressableMemory8_16 input[0:8] 1 inputPlusSomething[0:8] input
+
+outputEnable=test 0
