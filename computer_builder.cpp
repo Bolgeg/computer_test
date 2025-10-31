@@ -640,6 +640,15 @@ class ComputerBuilder
 					
 					return std::to_string(value);
 				}
+				else if(removeStringEndWith(str,"+1"))
+				{
+					int value=getTemplateArgumentIntegerValueWithName(str,templateArguments,lineIndex);
+					
+					if(uint32_t(value)>=(uint32_t(1)<<31)-1) throw errorString(__LINE__,lineIndex);
+					value+=1;
+					
+					return std::to_string(value);
+				}
 				else
 				{
 					return getTemplateArgumentWithName(str,templateArguments,lineIndex);
@@ -1028,6 +1037,8 @@ class ComputerBuilder
 					
 					vector<AssignmentLineData> assignmentLines;
 					
+					int nextOutputToDiscardIndex=0;
+					
 					for(int lineIndex=component.firstLine;lineIndex<=component.lastLine;lineIndex++)
 					{
 						string line=lines[lineIndex];
@@ -1115,6 +1126,12 @@ class ComputerBuilder
 							{
 								string name=outputs[i];
 								if(!isValidIdentifier(name)) throw errorString(__LINE__,lineIndex);
+								
+								if(name=="_")
+								{
+									name+=std::to_string(nextOutputToDiscardIndex);
+									nextOutputToDiscardIndex++;
+								}
 								
 								int variableIndex=findWithName(component.variables,name);
 								if(variableIndex!=-1)
@@ -1293,7 +1310,7 @@ class ComputerBuilder
 					{
 						Component::Variable& variable=component.variables[v];
 						
-						if(variable.type==Component::Variable::Type::output)
+						if(variable.type==Component::Variable::Type::output || variable.type==Component::Variable::Type::reg)
 						{
 							bool found=false;
 							
@@ -1425,7 +1442,9 @@ class ComputerBuilder
 				{
 					for(int i=0;i<elementInput.sizeInBits;i++)
 					{
-						computerInputs.emplace_back(ComputerData::Input::Type::constant,(uint64_t(elementInput.constantValue)>>i)&1);
+						int bit=0;
+						if(i<64) bit=(uint64_t(elementInput.constantValue)>>i)&1;
+						computerInputs.emplace_back(ComputerData::Input::Type::constant,bit);
 					}
 				}
 				else

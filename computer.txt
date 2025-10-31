@@ -108,6 +108,17 @@ output=and a b
 
 
 
+nor:
+
+output: out
+inputA: in
+inputB: in
+
+a=or inputA inputB
+output=not a
+
+
+
 <NAME=and,or,xor>ABC:
 
 output: out
@@ -168,6 +179,375 @@ output=concat<N-1>_1 a b
 
 
 
+inc:
+
+output: out
+outputCarry: out
+
+input: in
+inputCarry: in
+
+a=or input inputCarry
+b=nand input inputCarry
+output=and a b
+outputCarry=not b
+
+
+
+inc1:
+
+output: out
+outputCarry: out
+
+input: in
+inputCarry: in
+
+output outputCarry=inc input inputCarry
+
+
+
+inc<N=2...16>:
+
+output: out <N>
+outputCarry: out
+
+input: in <N>
+inputCarry: in
+
+a carry=inc<N-1> input[0:<N-1>] inputCarry
+b outputCarry=inc input[<N-1>] carry
+output=concat<N-1>_1 a b
+
+
+
+bitShiftLeft1_<N=2...16>:
+
+output: out <N>
+outputCarry: out
+
+input: in <N>
+
+a=set<N-1> input[0:<N-1>]
+output=concat1_<N-1> 0 a
+outputCarry=set input[<N-1>]
+
+
+
+bitShiftRightUnsigned1_<N=2...16>:
+
+output: out <N>
+outputCarry: out
+
+input: in <N>
+
+a=set<N-1> input[1:<N>]
+output=concat<N-1>_1 a 0
+outputCarry=set input[0]
+
+
+
+bitShiftRightSigned1_<N=2...16>:
+
+output: out <N>
+outputCarry: out
+
+input: in <N>
+
+a=set<N-1> input[1:<N>]
+output=concat<N-1>_1 a input[<N-1>]
+outputCarry=set input[0]
+
+
+
+<NAME=bitShiftLeft,bitShiftRightUnsigned,bitShiftRightSigned><SHIFT=2...15>_<N=2...16>:
+
+output: out <N>
+outputCarry: out
+
+input: in <N>
+
+a carryA=<NAME><SHIFT-1>_<N> input
+output carryB=<NAME>1_<N> a
+outputCarry=or carryA carryB
+
+
+
+<NAME=bitShiftLeft,bitShiftRightUnsigned,bitShiftRightSigned>N_P<P=4>_step1:
+
+output: out <2**P>
+outputCarry: out
+
+inputA: in <2**P>
+inputB: in
+
+b carryB=<NAME>1_<2**P> inputA
+output=ternaryOperator<2**P> inputB[0] inputA b
+outputCarry=and carryB inputB[0]
+
+
+
+<NAME=bitShiftLeft,bitShiftRightUnsigned,bitShiftRightSigned>N_P<P=4>_step<T=2...4>:
+
+output: out <2**P>
+outputCarry: out
+
+inputA: in <2**P>
+inputB: in <T>
+
+a carryA=<NAME>N_P<P>_step<T-1> inputA[0:<2**P>] inputB[0:<T-1>]
+b carryB=<NAME><2**T/2>_<2**P> a
+output=ternaryOperator<2**P> inputB[<T-1>] a b
+carryB_effect=and carryB inputB[<T-1>]
+outputCarry=or carryA carryB_effect
+
+
+
+<NAME=bitShiftLeft,bitShiftRightUnsigned,bitShiftRightSigned>N_P<P=4>:
+
+output: out <2**P>
+outputCarry: out
+
+inputA: in <2**P>
+inputB: in <P>
+
+output outputCarry=<NAME>N_P<P>_step<P> inputA inputB
+
+
+
+neg<N=1...16>:
+
+output: out <N>
+
+input: in <N>
+
+a=not<N> input
+output b=inc<N> a 1
+
+
+
+sub<N=1...16>:
+
+output: out <N>
+outputCarry: out
+
+inputA: in <N>
+inputB: in <N>
+inputCarry: in
+
+b=neg<N> inputB
+output outputCarry=add<N> inputA b inputCarry
+
+
+
+mul<S=1...16>_1:
+
+output: out <S>
+outputOverflow: out
+
+inputA: in <S>
+inputB: in
+
+b=fanOut<S> inputB
+output=and<S> inputA b
+outputOverflow=set 0
+
+
+
+mul<S=2...16>_<N=2...16>:
+
+output: out <S>
+outputOverflow: out
+
+inputA: in <S>
+inputB: in <N>
+
+a oa=mul<S>_<N-1> inputA inputB[0:<N-1>]
+b _=mul<S>_1 inputA inputB[<N-1>]
+c ob=bitShiftLeft<N-1>_<S> b
+output oc=add<S> a c 0
+outputOverflow=orABC oa ob oc
+
+
+
+equal1:
+
+output: out
+
+inputA: in
+inputB: in
+
+different=xor inputA inputB
+output=not different
+
+
+
+equal<S=2...16>:
+
+output: out
+
+inputA: in <S>
+inputB: in <S>
+
+a=equal<S-1> inputA[0:<S-1>] inputB[0:<S-1>]
+b=equal1 inputA[<S-1>] inputB[<S-1>]
+output=and a b
+
+
+
+lessThanUnsigned1:
+
+output: out
+
+inputA: in
+inputB: in
+
+inputANot=not inputA
+output=and inputANot inputB
+
+
+
+lessThanUnsigned<S=2...16>:
+
+output: out
+
+inputA: in <S>
+inputB: in <S>
+
+a=lessThanUnsigned<S-1> inputA[0:<S-1>] inputB[0:<S-1>]
+b=lessThanUnsigned1 inputA[<S-1>] inputB[<S-1>]
+c=xor inputA[<S-1>] inputB[<S-1>]
+output=multiplexer c a b
+
+
+
+lessThanSigned<S=2...16>:
+
+output: out
+
+inputA: in <S>
+inputB: in <S>
+
+bothNegative=and inputA[<S-1>] inputB[<S-1>]
+differentSigns=xor inputA[<S-1>] inputB[<S-1>]
+inputA_not=not<S> inputA
+inputB_not=not<S> inputB
+a=ternaryOperator<S-1> bothNegative inputA[0:<S-1>] inputA_not[0:<S-1>]
+b=ternaryOperator<S-1> bothNegative inputB[0:<S-1>] inputB_not[0:<S-1>]
+c=lessThanUnsigned<S-1> a b
+output=ternaryOperator1 differentSigns c inputA[<S-1>]
+
+
+
+divUnsigned<S=16>_step<BIT=0...15>:
+
+outputQuotientBit: out
+outputRemainder: out <S>
+
+inputDividend: in <S>
+inputDivisor: in <S>
+inputDivisorNeg: in <S>
+inputRemainder: in <S>
+
+a=concat1_<S-1> inputDividend[<BIT>] inputRemainder[0:<S-1>]
+b _=add<S> a inputDivisorNeg 0
+bit=lessThanUnsigned<S> a inputDivisor
+outputQuotientBit=not bit
+outputRemainder=ternaryOperator<S> bit b a
+
+
+
+divUnsigned<S=16>_stepsToBit<BIT=16>:
+
+outputQuotient: out <S>
+outputRemainder: out <S>
+
+inputDividend: in <S>
+inputDivisor: in <S>
+inputDivisorNeg: in <S>
+
+outputQuotient=set<S> 0
+outputRemainder=set<S> 0
+
+
+
+divUnsigned<S=16>_stepsToBit<BIT=0...15>:
+
+outputQuotient: out <S>
+outputRemainder: out <S>
+
+inputDividend: in <S>
+inputDivisor: in <S>
+inputDivisorNeg: in <S>
+
+quotient remainder=divUnsigned<S>_stepsToBit<BIT+1> inputDividend inputDivisor inputDivisorNeg
+quotientNewBit outputRemainder=divUnsigned<S>_step<BIT> inputDividend inputDivisor inputDivisorNeg remainder
+outputQuotient=concat1_<S-1> quotientNewBit quotient[0:<S-1>]
+
+
+
+divUnsigned<S=16>:
+
+outputQuotient: out <S>
+outputRemainder: out <S>
+
+inputDividend: in <S>
+inputDivisor: in <S>
+
+inputDivisorNeg=neg<S> inputDivisor
+outputQuotient outputRemainder=divUnsigned<S>_stepsToBit0 inputDividend inputDivisor inputDivisorNeg
+
+
+
+abs<S=1...16>:
+
+output: out <S>
+
+input: in <S>
+
+negated=neg<S> input
+output=ternaryOperator<S> input[<S-1>] input negated
+
+
+
+divSigned<S=16>:
+
+outputQuotient: out <S>
+outputRemainder: out <S>
+
+inputDividend: in <S>
+inputDivisor: in <S>
+
+dividend=abs<S> inputDividend
+divisor=abs<S> inputDivisor
+quotient remainder=divUnsigned<S> dividend divisor
+quotientNeg=neg<S> quotient
+remainderNeg=neg<S> remainder
+outputQuotientSign=xor inputDividend[<S-1>] inputDivisor[<S-1>]
+outputQuotient=ternaryOperator<S> outputQuotientSign quotient quotientNeg
+outputRemainder=ternaryOperator<S> inputDividend[<S-1>] remainder remainderNeg
+
+
+
+fanOut1:
+
+output: out
+input: in
+
+output=set input
+
+
+
+fanOut<N=2...16>:
+
+output: out <N>
+
+input: in
+
+a=fanOut<N-1> input
+output=concat<N-1>_1 a input
+
+
+
 fanOutP0:
 
 output: out
@@ -186,6 +566,30 @@ input: in
 a=fanOutP<N-1> input
 b=fanOutP<N-1> input
 output=concat<2**N/2>_<2**N/2> a b
+
+
+
+decoder1:
+
+output: out 2
+
+input: in
+
+inputNot=not input
+output=concat1_1 inputNot input
+
+
+
+decoder<P=2...4>:
+
+output: out <2**P>
+
+input: in <P>
+
+previousLevel=decoder<P-1> input[0:<P-1>]
+a=ternaryOperator<2**P/2> input[<P-1>] previousLevel 0
+b=ternaryOperator<2**P/2> input[<P-1>] 0 previousLevel
+output=concat<2**P/2>_<2**P/2> a b
 
 
 
@@ -241,6 +645,45 @@ ia ib=demultiplexer inputControl[<N-1>] input
 a=demultiplexer<N-1> inputControl[0:<N-1>] ia
 b=demultiplexer<N-1> inputControl[0:<N-1>] ib
 output=concat<2**N/2>_<2**N/2> a b
+
+
+
+ternaryOperator<N=1...16>:
+
+output: out <N>
+
+inputControl: in
+inputA: in <N>
+inputB: in <N>
+
+control=fanOut<N> inputControl
+output=multiplexerArray<N> control inputA inputB
+
+
+
+multiplexerArray1:
+
+output: out
+
+inputControl: in
+inputA: in
+inputB: in
+
+output=multiplexer inputControl inputA inputB
+
+
+
+multiplexerArray<N=2...16>:
+
+output: out <N>
+
+inputControl: in <N>
+inputA: in <N>
+inputB: in <N>
+
+a=multiplexerArray<N-1> inputControl[0:<N-1>] inputA[0:<N-1>] inputB[0:<N-1>]
+b=multiplexerArray1 inputControl[<N-1>] inputA[<N-1>] inputB[<N-1>]
+output=concat<N-1>_1 a b
 
 
 
@@ -327,17 +770,563 @@ output=concat<WORD/2>_<WORD/2> a b
 
 
 
-test:
+chooseAB<S=1...16>:
+
+output: out <S>
+
+inputControl: in
+inputA: in <S>
+inputB: in <S>
+
+output=ternaryOperator<S> inputControl inputA inputB
+
+
+
+chooseABCD<S=1...16>:
+
+output: out <S>
+
+inputControl: in 2
+inputA: in <S>
+inputB: in <S>
+inputC: in <S>
+inputD: in <S>
+
+a=chooseAB<S> inputControl[0] inputA inputB
+b=chooseAB<S> inputControl[0] inputC inputD
+output=chooseAB<S> inputControl[1] a b
+
+
+
+chooseABCDEFGH<S=1...16>:
+
+output: out <S>
+
+inputControl: in 3
+inputA: in <S>
+inputB: in <S>
+inputC: in <S>
+inputD: in <S>
+inputE: in <S>
+inputF: in <S>
+inputG: in <S>
+inputH: in <S>
+
+a=chooseABCD<S> inputControl[0:2] inputA inputB inputC inputD
+b=chooseABCD<S> inputControl[0:2] inputE inputF inputG inputH
+output=chooseAB<S> inputControl[2] a b
+
+
+
+orABCD:
 
 output: out
 
-input: in
+inputA: in
+inputB: in
+inputC: in
+inputD: in
 
-b=set8 0
-c=set 0
-a=addressableMemory8_16 b c b a
+a=orABC inputA inputB inputC
+output=or a inputD
 
-output outputB=demultiplexer 0 1
+
+
+orABCDE:
+
+output: out
+
+inputA: in
+inputB: in
+inputC: in
+inputD: in
+inputE: in
+
+a=orABCD inputA inputB inputC inputD
+output=or a inputE
+
+
+
+orABCDEF:
+
+output: out
+
+inputA: in
+inputB: in
+inputC: in
+inputD: in
+inputE: in
+inputF: in
+
+a=orABCDE inputA inputB inputC inputD inputE
+output=or a inputF
+
+
+
+orABCDEFG:
+
+output: out
+
+inputA: in
+inputB: in
+inputC: in
+inputD: in
+inputE: in
+inputF: in
+inputG: in
+
+a=orABCDEF inputA inputB inputC inputD inputE inputF
+output=or a inputG
+
+
+
+alu:
+
+output: out 16
+
+inputA: in 16
+inputB: in 16
+operationIndex: in 4
+
+rNot=not16 inputA
+rNeg=neg16 inputA
+rAnd=and16 inputA inputB
+rOr=or16 inputA inputB
+rXor=xor16 inputA inputB
+rShl _=bitShiftLeftN_P4 inputA inputB[0:4]
+rShr _=bitShiftRightUnsignedN_P4 inputA inputB[0:4]
+rShrs _=bitShiftRightSignedN_P4 inputA inputB[0:4]
+
+rAdd _=add16 inputA inputB 0
+rSub _=sub16 inputA inputB 0
+rMul _=mul16_16 inputA inputB
+rDiv rMod=divUnsigned16 inputA inputB
+rDivs rMods=divSigned16 inputA inputB
+
+a=chooseABCDEFGH16 operationIndex[0:3] rNot rNeg rAnd rOr rXor rShl rShr rShrs
+b=chooseABCDEFGH16 operationIndex[0:3] rAdd rSub rMul 0 rDiv rDivs rMod rMods
+output=chooseAB16 operationIndex[3] a b
+
+
+
+computerStageShiftRegisterUpdate:
+
+nextShiftRegisterValue: out 8
+
+shiftRegisterValue: in 8
+restart: in
+moveForward: in
+
+shifted _=bitShiftLeft1_8 shiftRegisterValue
+a=chooseAB8 moveForward shiftRegisterValue shifted
+nextShiftRegisterValue=chooseAB8 restart a 1
+
+
+
+getOpcodeValid:
+
+valid: out
+
+opcode: in 8
+
+a=chooseABCDEFGH1 opcode[0:3] 1 1 1 1 1 1 1 1
+b=chooseABCDEFGH1 opcode[0:3] 1 1 1 0 1 1 1 1
+c=chooseABCDEFGH1 opcode[0:3] 1 1 1 1 1 1 1 1
+d=chooseABCDEFGH1 opcode[0:3] 1 0 0 0 0 0 0 0
+o=chooseABCD1 opcode[3:5] a b c d
+insideRange=equal3 opcode[5:8] 0
+valid=and insideRange o
+
+
+
+getOpcodeUseAlu:
+
+useAlu: out
+
+valid: in
+opcode: in 8
+
+insideRange=equal4 opcode[4:8] 0
+useAlu=and valid insideRange
+
+
+
+getOpcodeAluOperationIndex:
+
+operationIndex: out 4
+
+valid: in
+opcode: in 8
+
+operationIndex=chooseAB4 valid 0 opcode[0:4]
+
+
+
+getOpcodeFirstArgumentIsOutput:
+
+output: out
+
+valid: in
+opcode: in 8
+
+a=chooseABCDEFGH8 opcode[0:3] 1 1 1 1 1 1 1 1
+b=chooseABCDEFGH8 opcode[0:3] 1 1 1 0 1 1 1 1
+c=chooseABCDEFGH8 opcode[0:3] 1 0 0 0 0 0 0 0
+d=chooseABCDEFGH8 opcode[0:3] 0 0 0 0 0 0 0 0
+o=chooseABCD8 opcode[3:5] a b c d
+output=chooseAB8 valid 0 o
+
+
+
+getOpcodeParameterCount:
+
+output: out 8
+
+valid: in
+opcode: in 8
+
+a=chooseABCDEFGH8 opcode[0:3] 2 2 3 3 3 3 3 3
+b=chooseABCDEFGH8 opcode[0:3] 3 3 3 0 3 3 3 3
+c=chooseABCDEFGH8 opcode[0:3] 2 1 3 3 3 3 3 3
+d=chooseABCDEFGH8 opcode[0:3] 1 0 0 0 0 0 0 0
+o=chooseABCD8 opcode[3:5] a b c d
+output=chooseAB8 valid 0 o
+
+getOpcodeNotAluInstruction:
+
+isMov: out
+isJ: out
+isJe: out
+isJne: out
+isJl: out
+isJnl: out
+isJls: out
+isJnls: out
+isOut: out
+
+opcode: in 8
+
+isMov=equal8 opcode 16
+isJ=equal8 opcode 17
+isJe=equal8 opcode 18
+isJne=equal8 opcode 19
+isJl=equal8 opcode 20
+isJnl=equal8 opcode 21
+isJls=equal8 opcode 22
+isJnls=equal8 opcode 23
+isOut=equal8 opcode 24
+
+
+
+decodeParameterByte:
+
+readExtra: out
+useRegister: out
+accessMemory: out
+shortValue: out 5
+
+parameterByte: in 8
+
+readExtra=set parameterByte[7]
+useRegister=set parameterByte[6]
+accessMemory=set parameterByte[5]
+shortValue=set5 parameterByte[0:5]
+
+
+
+parameterData:
+
+useRegister: out
+accessMemory: out
+value: out 16
+
+overwriteEnable: in
+parameterByte: in 8
+parameterByteExtraA: in 8
+parameterByteExtraB: in 8
+
+useRegisterReg: reg
+accessMemoryReg: reg
+valueReg: reg 16
+
+_readExtra _useRegister _accessMemory _shortValue=decodeParameterByte parameterByte
+_shortValueExtended=concat5_11 _shortValue 0
+_longValue=concat8_8 parameterByteExtraA parameterByteExtraB
+_value=chooseAB16 _readExtra _shortValueExtended _longValue
+
+useRegister=set useRegisterReg
+accessMemory=set accessMemoryReg
+value=set16 valueReg
+
+useRegisterReg=chooseAB1 overwriteEnable useRegisterReg _useRegister
+accessMemoryReg=chooseAB1 overwriteEnable accessMemoryReg _accessMemory
+valueReg=chooseAB16 overwriteEnable valueReg _value
+
+
+
+chooseBitSetABC<S=1...16>:
+
+output: out <S>
+
+inputControl: in 8
+inputA: in <S>
+inputB: in <S>
+inputC: in <S>
+
+a=chooseAB<S> inputControl[0] 0 inputA
+b=chooseAB<S> inputControl[1] a inputB
+output=chooseAB<S> inputControl[2] b inputC
+
+
+
+computer<ADDRESS=4...16>:
+
+output: out 16
+outputEnable: out
+
+input: in 8
+inputCodeStop: in
+
+started: reg
+copyCode_counter: reg 16
+executionStarted: reg
+
+started=set 1
+_nextExecutionStarted=or executionStarted inputCodeStop
+executionStarted=set _nextExecutionStarted
+executionStarted_not=not executionStarted
+executionIsGoingToStartAtNextCycle=and _nextExecutionStarted executionStarted_not
+
+copyCode=nor executionStarted inputCodeStop
+copyCode_counter _=inc16 copyCode_counter copyCode
+
+
+codeAddressRegister: reg 16
+
+instructionStage: reg 8
+instructionStage_step: reg 8
+instructionStage_substep: reg 8
+instructionStage_subsubstep: reg 8
+
+
+startInstruction=or executionIsGoingToStartAtNextCycle endOfInstruction
+instructionStage=computerStageShiftRegisterUpdate instructionStage startInstruction instructionStage_moveForward
+
+_startInstructionStep=or startInstruction instructionStage_moveForward
+instructionStage_step=computerStageShiftRegisterUpdate instructionStage_step _startInstructionStep instructionStage_step_moveForward
+
+_startInstructionSubstep=orABC startInstruction instructionStage_moveForward instructionStage_step_moveForward
+instructionStage_substep=computerStageShiftRegisterUpdate instructionStage_substep _startInstructionSubstep instructionStage_substep_moveForward
+
+_startInstructionSubsubstep=orABCD startInstruction instructionStage_moveForward instructionStage_step_moveForward instructionStage_substep_moveForward
+instructionStage_subsubstep=computerStageShiftRegisterUpdate instructionStage_subsubstep _startInstructionSubsubstep instructionStage_subsubstep_moveForward
+
+
+instructionStage_readOpcode=and executionStarted instructionStage[0]
+instructionStage_readArguments=and executionStarted instructionStage[1]
+instructionStage_execute=and executionStarted instructionStage[2]
+
+instructionStage_currentArgument=chooseAB8 instructionStage_readArguments 0 instructionStage_step
+
+instructionStage_readParameter=and instructionStage_readArguments instructionStage_substep[0]
+instructionStage_readArgument=and instructionStage_readArguments instructionStage_substep[1]
+
+instructionStage_readParameter_byte=and instructionStage_readParameter instructionStage_subsubstep[0]
+instructionStage_readParameter_byteExtraA=and instructionStage_readParameter instructionStage_subsubstep[1]
+instructionStage_readParameter_byteExtraB=and instructionStage_readParameter instructionStage_subsubstep[2]
+
+instructionStage_readArgument_firstByte=and instructionStage_readArgument instructionStage_subsubstep[0]
+instructionStage_readArgument_secondByte=and instructionStage_readArgument instructionStage_subsubstep[1]
+
+instructionStage_execute_writeOutput_firstByte=andABC instructionStage_execute firstArgumentIsMemoryOutput instructionStage_step[0]
+instructionStage_execute_writeOutput_secondByte=andABC instructionStage_execute firstArgumentIsMemoryOutput instructionStage_step[1]
+
+
+opcodeByte: reg 8
+parameterByte: reg 8
+parameterByteExtraA: reg 8
+parameterByteExtraB: reg 8
+
+opcodeValid=getOpcodeValid opcodeByte
+
+parameterCount=getOpcodeParameterCount opcodeValid opcodeByte
+
+firstArgumentIsOutput=getOpcodeFirstArgumentIsOutput opcodeValid opcodeByte
+currentArgumentIsOutput=and instructionStage_currentArgument[0] firstArgumentIsOutput
+
+_endOfParameters_bits=decoder3 parameterCount[0:3]
+_endOfParameters_a=and _endOfParameters_bits[0] instructionStage_readOpcode
+_endOfParameters_bits_shifted _=bitShiftRightUnsigned1_8 _endOfParameters_bits
+_endOfParameters_b=equal8 _endOfParameters_bits_shifted instructionStage_currentArgument
+_endOfParameters_c=and instructionStage_step_moveForward _endOfParameters_b
+endOfParameters=or _endOfParameters_a _endOfParameters_c
+
+opcodeByte=chooseAB8 instructionStage_readOpcode opcodeByte readFromMemory_value
+parameterByte=chooseAB8 instructionStage_readParameter_byte parameterByte readFromMemory_value
+parameterByteExtraA=chooseAB8 instructionStage_readParameter_byteExtraA parameterByteExtraA readFromMemory_value
+parameterByteExtraB=chooseAB8 instructionStage_readParameter_byteExtraB parameterByteExtraB readFromMemory_value
+
+parameterByte_updatedAOT=chooseAB8 instructionStage_readParameter_byte parameterByte readFromMemory_value
+parameterByteExtraA_updatedAOT=chooseAB8 instructionStage_readParameter_byteExtraA parameterByteExtraA readFromMemory_value
+parameterByteExtraB_updatedAOT=chooseAB8 instructionStage_readParameter_byteExtraB parameterByteExtraB readFromMemory_value
+
+
+parameter_readExtra _ _ _=decodeParameterByte parameterByte_updatedAOT
+_parameter_readExtra_not=not parameter_readExtra
+_parameter_read_end_a=and instructionStage_readParameter_byte _parameter_readExtra_not
+parameter_read_end=or _parameter_read_end_a instructionStage_readParameter_byteExtraB
+
+
+_parameter_read_end_A=and parameter_read_end instructionStage_currentArgument[0]
+parameterA_useRegister parameterA_accessMemory parameterA_value=parameterData _parameter_read_end_A parameterByte_updatedAOT parameterByteExtraA_updatedAOT parameterByteExtraB_updatedAOT
+
+_parameter_read_end_B=and parameter_read_end instructionStage_currentArgument[1]
+parameterB_useRegister parameterB_accessMemory parameterB_value=parameterData _parameter_read_end_B parameterByte_updatedAOT parameterByteExtraA_updatedAOT parameterByteExtraB_updatedAOT
+
+_parameter_read_end_C=and parameter_read_end instructionStage_currentArgument[2]
+parameterC_useRegister parameterC_accessMemory parameterC_value=parameterData _parameter_read_end_C parameterByte_updatedAOT parameterByteExtraA_updatedAOT parameterByteExtraB_updatedAOT
+
+
+argumentA: reg 16
+argumentB: reg 16
+argumentC: reg 16
+
+_argumentA_writeEnable=and instructionStage_readArgument_end instructionStage_currentArgument[0]
+argumentA=chooseAB16 _argumentA_writeEnable argumentA argumentValueRead
+
+_argumentB_writeEnable=and instructionStage_readArgument_end instructionStage_currentArgument[1]
+argumentB=chooseAB16 _argumentB_writeEnable argumentB argumentValueRead
+
+_argumentC_writeEnable=and instructionStage_readArgument_end instructionStage_currentArgument[2]
+argumentC=chooseAB16 _argumentC_writeEnable argumentC argumentValueRead
+
+currentParameter_useRegister=chooseBitSetABC1 instructionStage_currentArgument parameterA_useRegister parameterB_useRegister parameterC_useRegister
+currentParameter_accessMemory=chooseBitSetABC1 instructionStage_currentArgument parameterA_accessMemory parameterB_accessMemory parameterC_accessMemory
+currentParameter_value=chooseBitSetABC16 instructionStage_currentArgument parameterA_value parameterB_value parameterC_value
+
+
+_currentParameter_useRegister_final_a=nand firstArgumentIsOutput firstArgumentIsMemoryOutput_not
+_currentParameter_useRegister_final_b=chooseAB1 instructionStage_currentArgument[0] 1 _currentParameter_useRegister_final_a
+currentParameter_useRegister_final=andABC instructionStage_readArgument currentParameter_useRegister _currentParameter_useRegister_final_b
+
+_currentParameter_accessMemory_final_a=not firstArgumentIsOutput
+_currentParameter_accessMemory_final_b=chooseAB1 instructionStage_currentArgument[0] 1 _currentParameter_accessMemory_final_a
+currentParameter_accessMemory_final=andABC instructionStage_readArgument currentParameter_accessMemory _currentParameter_accessMemory_final_b
+
+
+argumentReadFromMemoryFirstByte: reg 8
+
+
+_argumentValueRead_pre_register=set16 currentParameter_value
+
+currentParameter_useRegister_address=set16 _argumentValueRead_pre_register
+_argumentValueRead_pre_memory=chooseAB16 currentParameter_useRegister_final _argumentValueRead_pre_register readFromRegister_value
+
+currentParameter_accessMemory_address _=inc16 _argumentValueRead_pre_memory instructionStage_readArgument_secondByte
+argumentReadFromMemoryFirstByte=chooseAB8 instructionStage_readArgument_firstByte argumentReadFromMemoryFirstByte readFromMemory_value
+_argumentValueRead_fromMemoryFull=concat8_8 argumentReadFromMemoryFirstByte readFromMemory_value
+argumentValueRead=chooseAB16 currentParameter_accessMemory_final _argumentValueRead_pre_memory _argumentValueRead_fromMemoryFull
+
+_currentParameter_accessMemory_not=not currentParameter_accessMemory
+_instructionStage_readArgument_end_a=or _currentParameter_accessMemory_not instructionStage_readArgument_secondByte
+instructionStage_readArgument_end=and instructionStage_readArgument _instructionStage_readArgument_end_a
+
+
+_ignoreInstruction_a=nor parameterA_useRegister parameterA_accessMemory
+_ignoreInstruction_b=and firstArgumentIsOutput _ignoreInstruction_a
+_opcodeValid_not=not opcodeValid
+ignoreInstruction=or _opcodeValid_not _ignoreInstruction_b
+
+
+firstArgumentIsMemoryOutput=and firstArgumentIsOutput parameterA_accessMemory
+firstArgumentIsMemoryOutput_not=not firstArgumentIsMemoryOutput
+
+
+instructionOutputValueSecondByte: reg 8
+
+
+useAlu=getOpcodeUseAlu opcodeValid opcodeByte
+aluOperationIndex=getOpcodeAluOperationIndex opcodeValid opcodeByte
+aluOutput=alu argumentB argumentC aluOperationIndex
+
+instructionOutputValue=chooseAB16 useAlu argumentB aluOutput
+
+
+isMov isJ isJe isJne isJl isJnl isJls isJnls isOut=getOpcodeNotAluInstruction opcodeByte
+
+isJumpTypeInstruction=orABCDEFG isJ isJe isJne isJl isJnl isJls isJnls
+
+_pre_acceptJe=equal16 argumentB argumentC
+_pre_acceptJne=not _pre_acceptJe
+_pre_acceptJl=lessThanUnsigned16 argumentB argumentC
+_pre_acceptJnl=not _pre_acceptJl
+_pre_acceptJls=lessThanSigned16 argumentB argumentC
+_pre_acceptJnls=not _pre_acceptJls
+
+acceptJe=and isJe _pre_acceptJe
+acceptJne=and isJne _pre_acceptJne
+acceptJl=and isJl _pre_acceptJl
+acceptJnl=and isJnl _pre_acceptJnl
+acceptJls=and isJls _pre_acceptJls
+acceptJnls=and isJnls _pre_acceptJnls
+
+acceptJump=orABCDEFG isJ acceptJe acceptJne acceptJl acceptJnl acceptJls acceptJnls
+executeJump=andABC instructionStage_execute isJumpTypeInstruction acceptJump
+executeJump_address=set16 argumentA
+
+putOutput=and instructionStage_execute isOut
+putOutput_value=set16 argumentA
+
+
+instructionOutputValue_toRegister=andABC instructionExecutionEnd firstArgumentIsOutput firstArgumentIsMemoryOutput_not
+instructionOutputValue_toRegister_address=set16 argumentA
+instructionOutputValue_toRegister_value=set16 instructionOutputValue
+
+instructionOutputValueSecondByte=chooseAB8 instructionStage_execute_writeOutput_firstByte instructionOutputValueSecondByte instructionOutputValue[8:16]
+
+instructionOutputValue_toMemory=or instructionStage_execute_writeOutput_firstByte instructionStage_execute_writeOutput_secondByte
+instructionOutputValue_toMemory_address _=inc16 argumentA instructionStage_execute_writeOutput_secondByte
+instructionOutputValue_toMemory_value=chooseAB8 instructionStage_execute_writeOutput_secondByte instructionOutputValue[0:8] instructionOutputValueSecondByte
+
+
+_instructionExecutionEnd_a=and instructionStage_execute firstArgumentIsMemoryOutput_not
+instructionExecutionEnd=or instructionStage_execute_writeOutput_secondByte _instructionExecutionEnd_a
+
+
+_endOfInstruction_a=and endOfParameters ignoreInstruction
+endOfInstruction=or _endOfInstruction_a instructionExecutionEnd
+instructionStage_moveForward=or instructionStage_readOpcode endOfParameters
+instructionStage_step_moveForward=or instructionStage_readArgument_end instructionStage_execute
+instructionStage_substep_moveForward=set parameter_read_end
+instructionStage_subsubstep_moveForward=set instructionStage_readArguments
+
+pauseCodeAddressRegister=or instructionStage_execute instructionStage_readArgument
+pauseCodeAddressRegister_not=not pauseCodeAddressRegister
+
+codeAddressRegister_moveForward=and pauseCodeAddressRegister_not executionStarted
+
+_codeAddressRegister_inc _=inc16 codeAddressRegister 1
+codeAddressRegister_pre_jump=chooseAB16 codeAddressRegister_moveForward codeAddressRegister _codeAddressRegister_inc
+codeAddressRegister=chooseAB16 executeJump codeAddressRegister_pre_jump executeJump_address
+
+
+readFromMemory_address=chooseAB<ADDRESS> currentParameter_accessMemory_final codeAddressRegister[0:<ADDRESS>] currentParameter_accessMemory_address[0:<ADDRESS>]
+writeToMemory_enable=or copyCode instructionOutputValue_toMemory
+writeToMemory_address=chooseAB<ADDRESS> instructionOutputValue_toMemory copyCode_counter[0:<ADDRESS>] instructionOutputValue_toMemory_address[0:<ADDRESS>]
+writeToMemory_value=chooseAB8 instructionOutputValue_toMemory input instructionOutputValue_toMemory_value
+
+readFromMemory_value=addressableMemory<ADDRESS>_8 readFromMemory_address writeToMemory_enable writeToMemory_address writeToMemory_value
+
+
+readFromRegister_address=chooseAB5 currentParameter_useRegister_final 0 currentParameter_useRegister_address[0:5]
+writeToRegister_enable=set instructionOutputValue_toRegister
+writeToRegister_address=set5 instructionOutputValue_toRegister_address[0:5]
+writeToRegister_value=set16 instructionOutputValue_toRegister_value
+
+readFromRegister_value=addressableMemory5_16 readFromRegister_address writeToRegister_enable writeToRegister_address writeToRegister_value
+
+output=chooseAB16 putOutput 0 putOutput_value
+outputEnable=set putOutput
 
 
 
@@ -346,14 +1335,7 @@ main:
 output: out 16
 outputEnable: out
 
-input: in 16
+input: in 8
+inputCodeStop: in
 
-valueReg: reg 16
-
-
-valueReg outputCarry=add16 input valueReg 0
-
-inputPlusSomething inputPlusSomethingCarry=add16 input 4 0
-output=addressableMemory8_16 input[0:8] 1 inputPlusSomething[0:8] input
-
-outputEnable=test 0
+output outputEnable=computer8 input inputCodeStop

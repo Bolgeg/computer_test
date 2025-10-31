@@ -163,6 +163,23 @@ string bitsPerSecondToString(float bps)
 #include "computer.cpp"
 #include "computer_builder.cpp"
 
+void drawComputerState(graphics::Image& screen,const Computer::State& computerState,const Pos& position,const Pos& size,int widthInPixels,int memoryOffset=0)
+{
+	int pixelSize=size.x/widthInPixels;
+	
+	screen.rect(position+Pos(-2,-2),position+size+Pos(1,1),0xffffff);
+	for(int i=0;i<(size.x/pixelSize)*(size.y/pixelSize) && i<computerState.memory.size();i++)
+	{
+		Pos p=position+Pos(i%(size.x/pixelSize),i/(size.x/pixelSize))*pixelSize;
+		int bit=computerState.memory[memoryOffset+i]&1;
+		
+		int color= bit ? 0xffffff : 0;
+		
+		screen.rectfill(p,p+Pos(pixelSize,pixelSize)+Pos(-1,-1),color);
+		screen.rect(p,p+Pos(pixelSize,pixelSize)+Pos(-1,-1),0x808080);
+	}
+}
+
 int main(int argc,char*argv[])
 {
 	try
@@ -197,6 +214,126 @@ int main(int argc,char*argv[])
 	Computer::State computerState=computer.getInitialState();
 	
 	
+	int mov=16;
+	int jnls=23;
+	int mul=10;
+	int add=8;
+	int jls=22;
+	int out=24;
+	int j=17;
+	
+	int w=128;
+	int r=64;
+	int m=32;
+	
+	#define W(a) w,int(uint32_t(a)&0xff),int((uint32_t(a)>>8)&0xff)
+	
+	int loop1=16+3*3;
+	int loop1_end=loop1+28+3*1;
+	int loop2=loop1_end+6+3*1;
+	int loop2_end=loop2+17+3*1;
+	int loop3=loop2_end;
+	vector<int> machineCode=vector<int>{
+		mov,r|0,W(20),
+		mov,r|1,W(-20*2),
+		mov,r|2,0,
+		mov,r|3,1,
+		
+		
+		mov,r|4,0,
+		jnls,W(loop1_end),r|4,r|0,
+		//.loop1:
+		
+		mul,r|5,r|4,2,
+		add,r|6,r|1,r|5,
+		mov,m|r|6,r|3,
+		mov,r|7,r|3,
+		add,r|3,r|3,r|2,
+		mov,r|2,r|7,
+		
+		add,r|4,r|4,1,
+		jls,W(loop1),r|4,r|0,
+		//.loop1_end:
+		
+		
+		mov,r|4,0,
+		jnls,W(loop2_end),r|4,r|0,
+		//.loop2:
+		
+		mul,r|5,r|4,2,
+		add,r|6,r|1,r|5,
+		out,m|r|6,
+		
+		add,r|4,r|4,1,
+		jls,W(loop2),r|4,r|0,
+		//.loop2_end:
+		
+		
+		//.loop3:
+		j,W(loop3)
+	};
+	//Code in assembly:
+	/*
+	mov r0,20
+	mov r1,-20*2
+	mov r2,0
+	mov r3,1
+	
+	
+	mov r4,0
+	jnls .loop1_end r4,r0
+	.loop1:
+	
+	mul r5,r4,2
+	add r6,r1,r5
+	mov [r6],r3
+	mov r7,r3
+	add r3,r3,r2
+	mov r2,r7
+	
+	add r4,r4,1
+	jls .loop1 r4,r0
+	.loop1_end:
+	
+	
+	mov r4,0
+	jnls .loop2_end r4,r0
+	.loop2:
+	
+	mul r5,r4,2
+	add r6,r1,r5
+	out [r6]
+	
+	add r4,r4,1
+	jls .loop2 r4,r0
+	.loop2_end:
+	
+	
+	.loop3:
+	j .loop3
+	*/
+	
+	//Code in C:
+	/*
+	int numbersToOutput=20;
+	int output[20];
+	int oldValue=0;
+	int value=1;
+	for(int i=0;i<numbersToOutput;i++)
+	{
+		output[i]=value;
+		int newOldValue=value;
+		value+=oldValue;
+		oldValue=newOldValue;
+	}
+	for(int i=0;i<numbersToOutput;i++)
+	{
+		out(output[i]);
+	}
+	for(;;){}
+	*/
+	
+	
 	
 	wrapper::Window window;
 	window.create("Program");
@@ -205,17 +342,37 @@ int main(int argc,char*argv[])
 	
 	graphics::Image textFont("textfont.bmp");
 	
-	uint64_t step=0;
+	uint64_t cycle=0;
 	string output;
+	
+	bool play=false;
 	
 	while(window.pollEventsAndUpdateInputAndTime())
 	{
-		if(window.input.key['T'] && !window.input.keyOld['T'])
+		if(window.input.key[wrapper::key::SPACE] && !window.input.keyOld[wrapper::key::SPACE])
 		{
-			int inputNumber=1+step;
-			for(int i=0;i<16 && i<computerState.inputs.size();i++)
+			play=!play;
+		}
+		
+		if(play || window.input.key['T'] && !window.input.keyOld['T'])
+		{
+			if(cycle<machineCode.size())
 			{
-				computerState.inputs[i]=(uint64_t(inputNumber)>>i)&1;
+				if(computerState.inputs.size()>=8)
+				{
+					uint8_t inputNumber=machineCode[cycle];
+					for(int i=0;i<8;i++)
+					{
+						computerState.inputs[i]=(uint64_t(inputNumber)>>i)&1;
+					}
+				}
+			}
+			else if(cycle==machineCode.size())
+			{
+				if(computerState.inputs.size()>=9)
+				{
+					computerState.inputs[8]=1;
+				}
 			}
 			
 			computerState=computer.simulateStep(computerState);
@@ -227,26 +384,49 @@ int main(int argc,char*argv[])
 					uint64_t number=0;
 					for(int i=0;i<16;i++)
 					{
-						number|=(computerState.outputs[i]<<i);
+						number|=((computerState.outputs[i]&1)<<i);
 					}
 					if(output.size()>0) output+=",";
 					output+=std::to_string(number);
 				}
 			}
 			
-			step++;
+			cycle++;
 		}
 		
 		
 		
 		window.screen.clear(0x000000);
 		
-		window.screen.textprint(textFont,Pos(10,200),0xffffff,string("steps: ")+std::to_string(step));
+		window.screen.textprint(textFont,Pos(10,100),0xffffff,string("number of nand gates: ")+std::to_string(computer.nandGates.size()));
+		window.screen.textprint(textFont,Pos(10,150),0xffffff,string("number of memory bits: ")+std::to_string(computer.memory.size()));
 		
-		window.screen.textprint(textFont,Pos(10,300),0xffffff,output);
+		window.screen.textprint(textFont,Pos(10,200),0xffffff,string("cycle: ")+std::to_string(cycle));
 		
+		for(int lineIndex=0;;lineIndex++)
+		{
+			int lineWidth=64;
+			
+			int from=lineIndex*lineWidth;
+			int to_=(lineIndex+1)*lineWidth;
+			
+			if(from>=output.size()) break;
+			
+			string line;
+			if(to_>output.size())
+			{
+				to_=output.size();
+			}
+			
+			line=output.substr(from,to_-from);
+			
+			int lineY=lineIndex*(16+8);
+			
+			window.screen.textprint(textFont,Pos(10,600+lineY),0xffffff,line);
+		}
 		
-		
+		drawComputerState(window.screen,computerState,Pos(500,50),Pos(512,512),16);
+		drawComputerState(window.screen,computerState,Pos(1100,50),Pos(512,512),64);
 		
 		window.drawScreen();
 	}

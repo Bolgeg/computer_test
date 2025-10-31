@@ -210,7 +210,11 @@ class Computer
 	private:
 		State::BitType getInput(const Input& input,const State& inputState,const vector<State::BitType>& nandGateOutputs)
 		{
-			if(input.type==Input::Type::constant) return -State::BitType(input.index);
+			if(input.type==Input::Type::constant)
+			{
+				if(input.index) return State::BitType(int64_t(-1));
+				else return 0;
+			}
 			else if(input.type==Input::Type::computerInput) return inputState.inputs[input.index];
 			else if(input.type==Input::Type::computerMemory) return inputState.memory[input.index];
 			else if(input.type==Input::Type::nandGate) return nandGateOutputs[input.index];

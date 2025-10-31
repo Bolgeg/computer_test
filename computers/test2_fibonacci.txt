@@ -1,0 +1,743 @@
+<NAME=not>1:
+
+output: out
+input: in
+
+output=<NAME> input
+
+
+
+<NAME=not><N=2...16>:
+
+output: out <N>
+input: in <N>
+
+a=<NAME><N-1> input[0:<N-1>]
+b=<NAME>1 input[<N-1>]
+output=concat<N-1>_1 a b
+
+
+
+<NAME=and,or,xor>1:
+
+output: out
+inputA: in
+inputB: in
+
+output=<NAME> inputA inputB
+
+
+
+<NAME=and,or,xor><N=2...16>:
+
+output: out <N>
+inputA: in <N>
+inputB: in <N>
+
+a=<NAME><N-1> inputA[0:<N-1>] inputB[0:<N-1>]
+b=<NAME>1 inputA[<N-1>] inputB[<N-1>]
+output=concat<N-1>_1 a b
+
+
+
+<NAME=andABC,orABC,xorABC>1:
+
+output: out
+inputA: in
+inputB: in
+inputC: in
+
+output=<NAME> inputA inputB inputC
+
+
+
+<NAME=andABC,orABC,xorABC><N=2...16>:
+
+output: out <N>
+inputA: in <N>
+inputB: in <N>
+inputC: in <N>
+
+a=<NAME><N-1> inputA[0:<N-1>] inputB[0:<N-1>] inputC[0:<N-1>]
+b=<NAME>1 inputA[<N-1>] inputB[<N-1>] inputC[<N-1>]
+output=concat<N-1>_1 a b
+
+
+
+not:
+
+output: out
+input: in
+
+output=nand input input
+
+
+
+and:
+
+output: out
+inputA: in
+inputB: in
+
+a=nand inputA inputB
+output=not a
+
+
+
+or:
+
+output: out
+inputA: in
+inputB: in
+
+a=not inputA
+b=not inputB
+output=nand a b
+
+
+
+xor:
+
+output: out
+inputA: in
+inputB: in
+
+a=or inputA inputB
+b=nand inputA inputB
+output=and a b
+
+
+
+<NAME=and,or,xor>ABC:
+
+output: out
+
+inputA: in
+inputB: in
+inputC: in
+
+a=<NAME> inputA inputB
+output=<NAME> a inputC
+
+
+
+add:
+
+output: out
+outputCarry: out
+
+inputA: in
+inputB: in
+inputC: in
+
+output=xorABC inputA inputB inputC
+
+a=not inputA
+b=andABC a inputB inputC
+c=or inputB inputC
+d=and inputA c
+outputCarry=or b d
+
+
+
+add1:
+
+output: out
+outputCarry: out
+
+inputA: in
+inputB: in
+inputC: in
+
+output outputCarry=add inputA inputB inputC
+
+
+
+add<N=2...16>:
+
+output: out <N>
+outputCarry: out
+
+inputA: in <N>
+inputB: in <N>
+inputCarry: in
+
+a carry=add<N-1> inputA[0:<N-1>] inputB[0:<N-1>] inputCarry
+b outputCarry=add1 inputA[<N-1>] inputB[<N-1>] carry
+output=concat<N-1>_1 a b
+
+
+
+inc:
+
+output: out
+outputCarry: out
+
+input: in
+inputCarry: in
+
+a=or input inputCarry
+b=nand input inputCarry
+output=and a b
+outputCarry=not b
+
+
+
+inc1:
+
+output: out
+outputCarry: out
+
+input: in
+inputCarry: in
+
+output outputCarry=inc input inputCarry
+
+
+
+inc<N=2...16>:
+
+output: out <N>
+outputCarry: out
+
+input: in <N>
+inputCarry: in
+
+a carry=inc<N-1> input[0:<N-1>] inputCarry
+b outputCarry=inc input[<N-1>] carry
+output=concat<N-1>_1 a b
+
+
+
+bitShiftLeft1_<N=2...16>:
+
+output: out <N>
+outputCarry: out
+
+input: in <N>
+
+a=set<N-1> input[0:<N-1>]
+output=concat1_<N-1> 0 a
+outputCarry=set input[<N-1>]
+
+
+
+bitShiftRightUnsigned1_<N=2...16>:
+
+output: out <N>
+outputCarry: out
+
+input: in <N>
+
+a=set<N-1> input[1:<N>]
+output=concat<N-1>_1 a 0
+outputCarry=set input[0]
+
+
+
+bitShiftRightSigned1_<N=2...16>:
+
+output: out <N>
+outputCarry: out
+
+input: in <N>
+
+a=set<N-1> input[1:<N>]
+output=concat<N-1>_1 a input[<N-1>]
+outputCarry=set input[0]
+
+
+
+<NAME=bitShiftLeft,bitShiftRightUnsigned,bitShiftRightSigned><SHIFT=2...15>_<N=2...16>:
+
+output: out <N>
+outputCarry: out
+
+input: in <N>
+
+a carryA=<NAME><SHIFT-1>_<N> input
+output carryB=<NAME>1_<N> a
+outputCarry=or carryA carryB
+
+
+
+<NAME=bitShiftLeft,bitShiftRightUnsigned,bitShiftRightSigned>N_P<P=4>_step1:
+
+output: out <2**P>
+outputCarry: out
+
+inputA: in <2**P>
+inputB: in
+
+b carryB=<NAME>1_<2**P> inputA
+output=ternaryOperator<2**P> inputB[0] inputA b
+outputCarry=and carryB inputB[0]
+
+
+
+<NAME=bitShiftLeft,bitShiftRightUnsigned,bitShiftRightSigned>N_P<P=4>_step<T=2...4>:
+
+output: out <2**P>
+outputCarry: out
+
+inputA: in <2**P>
+inputB: in <T>
+
+a carryA=<NAME>N_P<P>_step<T-1> inputA[0:<2**P>] inputB[0:<T-1>]
+b carryB=<NAME><2**T/2>_<2**P> a
+output=ternaryOperator<2**P> inputB[<T-1>] a b
+carryB_effect=and carryB inputB[<T-1>]
+outputCarry=or carryA carryB_effect
+
+
+
+<NAME=bitShiftLeft,bitShiftRightUnsigned,bitShiftRightSigned>N_P<P=4>:
+
+output: out <2**P>
+outputCarry: out
+
+inputA: in <2**P>
+inputB: in <P>
+
+output outputCarry=<NAME>N_P<P>_step<P> inputA inputB
+
+
+
+neg<N=1...16>:
+
+output: out <N>
+
+input: in <N>
+
+a=not<N> input
+output b=inc<N> a 1
+
+
+
+sub<N=1...16>:
+
+output: out <N>
+outputCarry: out
+
+inputA: in <N>
+inputB: in <N>
+inputCarry: in
+
+b=neg<N> inputB
+output outputCarry=add<N> inputA b inputCarry
+
+
+
+mul<S=1...16>_1:
+
+output: out <S>
+outputOverflow: out
+
+inputA: in <S>
+inputB: in
+
+b=fanOut<S> inputB
+output=and<S> inputA b
+outputOverflow=set 0
+
+
+
+mul<S=2...16>_<N=2...16>:
+
+output: out <S>
+outputOverflow: out
+
+inputA: in <S>
+inputB: in <N>
+
+a oa=mul<S>_<N-1> inputA inputB[0:<N-1>]
+b _=mul<S>_1 inputA inputB[<N-1>]
+c ob=bitShiftLeft<N-1>_<S> b
+output oc=add<S> a c 0
+outputOverflow=orABC oa ob oc
+
+
+
+equal1:
+
+output: out
+
+inputA: in
+inputB: in
+
+different=xor inputA inputB
+output=not different
+
+
+
+equal<S=2...16>:
+
+output: out
+
+inputA: in <S>
+inputB: in <S>
+
+a=equal<S-1> inputA[0:<S-1>] inputB[0:<S-1>]
+b=equal1 inputA[<S-1>] inputB[<S-1>]
+output=and a b
+
+
+
+lessThanUnsigned1:
+
+output: out
+
+inputA: in
+inputB: in
+
+inputANot=not inputA
+output=and inputANot inputB
+
+
+
+lessThanUnsigned<S=2...16>:
+
+output: out
+
+inputA: in <S>
+inputB: in <S>
+
+a=lessThanUnsigned<S-1> inputA[0:<S-1>] inputB[0:<S-1>]
+b=lessThanUnsigned1 inputA[<S-1>] inputB[<S-1>]
+c=xor inputA[<S-1>] inputB[<S-1>]
+output=multiplexer c a b
+
+
+
+divUnsigned<S=16>_step<BIT=0...15>:
+
+outputQuotientBit: out
+outputRemainder: out <S>
+
+inputDividend: in <S>
+inputDivisor: in <S>
+inputDivisorNeg: in <S>
+inputRemainder: in <S>
+
+a=concat1_<S-1> inputDividend[<BIT>] inputRemainder[0:<S-1>]
+b _=add<S> a inputDivisorNeg 0
+bit=lessThanUnsigned<S> a inputDivisor
+outputQuotientBit=not bit
+outputRemainder=ternaryOperator<S> bit b a
+
+
+
+divUnsigned<S=16>_stepsToBit<BIT=16>:
+
+outputQuotient: out <S>
+outputRemainder: out <S>
+
+inputDividend: in <S>
+inputDivisor: in <S>
+inputDivisorNeg: in <S>
+
+outputQuotient=set<S> 0
+outputRemainder=set<S> 0
+
+
+
+divUnsigned<S=16>_stepsToBit<BIT=0...15>:
+
+outputQuotient: out <S>
+outputRemainder: out <S>
+
+inputDividend: in <S>
+inputDivisor: in <S>
+inputDivisorNeg: in <S>
+
+quotient remainder=divUnsigned<S>_stepsToBit<BIT+1> inputDividend inputDivisor inputDivisorNeg
+quotientNewBit outputRemainder=divUnsigned<S>_step<BIT> inputDividend inputDivisor inputDivisorNeg remainder
+outputQuotient=concat1_<S-1> quotientNewBit quotient[0:<S-1>]
+
+
+
+divUnsigned<S=16>:
+
+outputQuotient: out <S>
+outputRemainder: out <S>
+
+inputDividend: in <S>
+inputDivisor: in <S>
+
+inputDivisorNeg=neg<S> inputDivisor
+outputQuotient outputRemainder=divUnsigned<S>_stepsToBit0 inputDividend inputDivisor inputDivisorNeg
+
+
+
+abs<S=1...16>:
+
+output: out <S>
+
+input: in <S>
+
+negated=neg<S> input
+output=ternaryOperator<S> input[<S-1>] input negated
+
+
+
+divSigned<S=16>:
+
+outputQuotient: out <S>
+outputRemainder: out <S>
+
+inputDividend: in <S>
+inputDivisor: in <S>
+
+dividend=abs<S> inputDividend
+divisor=abs<S> inputDivisor
+quotient remainder=divUnsigned<S> dividend divisor
+quotientNeg=neg<S> quotient
+remainderNeg=neg<S> remainder
+outputQuotientSign=xor inputDividend[<S-1>] inputDivisor[<S-1>]
+outputQuotient=ternaryOperator<S> outputQuotientSign quotient quotientNeg
+outputRemainder=ternaryOperator<S> inputDividend[<S-1>] remainder remainderNeg
+
+
+
+fanOut1:
+
+output: out
+input: in
+
+output=set input
+
+
+
+fanOut<N=2...16>:
+
+output: out <N>
+
+input: in
+
+a=fanOut<N-1> input
+output=concat<N-1>_1 a input
+
+
+
+fanOutP0:
+
+output: out
+input: in
+
+output=set input
+
+
+
+fanOutP<N=1...16>:
+
+output: out <2**N>
+
+input: in
+
+a=fanOutP<N-1> input
+b=fanOutP<N-1> input
+output=concat<2**N/2>_<2**N/2> a b
+
+
+
+multiplexer:
+
+output: out
+
+inputControl: in
+inputA: in
+inputB: in
+
+inputControlNot=not inputControl
+a=nand inputControlNot inputA
+b=nand inputControl inputB
+output=nand a b
+
+
+
+demultiplexer:
+
+outputA: out
+outputB: out
+
+inputControl: in
+input: in
+
+inputControlNot=not inputControl
+outputA=and inputControlNot input
+outputB=and inputControl input
+
+
+
+demultiplexer1:
+
+output: out 2
+
+inputControl: in
+input: in
+
+a b=demultiplexer inputControl input
+output=concat1_1 a b
+
+
+
+demultiplexer<N=2...16>:
+
+output: out <2**N>
+
+inputControl: in <N>
+input: in
+
+ia ib=demultiplexer inputControl[<N-1>] input
+a=demultiplexer<N-1> inputControl[0:<N-1>] ia
+b=demultiplexer<N-1> inputControl[0:<N-1>] ib
+output=concat<2**N/2>_<2**N/2> a b
+
+
+
+ternaryOperator<N=1...16>:
+
+output: out <N>
+
+inputControl: in
+inputA: in <N>
+inputB: in <N>
+
+control=fanOut<N> inputControl
+output=multiplexerArray<N> control inputA inputB
+
+
+
+multiplexerArray1:
+
+output: out
+
+inputControl: in
+inputA: in
+inputB: in
+
+output=multiplexer inputControl inputA inputB
+
+
+
+multiplexerArray<N=2...16>:
+
+output: out <N>
+
+inputControl: in <N>
+inputA: in <N>
+inputB: in <N>
+
+a=multiplexerArray<N-1> inputControl[0:<N-1>] inputA[0:<N-1>] inputB[0:<N-1>]
+b=multiplexerArray1 inputControl[<N-1>] inputA[<N-1>] inputB[<N-1>]
+output=concat<N-1>_1 a b
+
+
+
+multiplexerArrayP0:
+
+output: out
+
+inputControl: in
+inputA: in
+inputB: in
+
+output=multiplexer inputControl inputA inputB
+
+
+
+multiplexerArrayP<N=1...16>:
+
+output: out <2**N>
+
+inputControl: in <2**N>
+inputA: in <2**N>
+inputB: in <2**N>
+
+a=multiplexerArrayP<N-1> inputControl[0:<2**N/2>] inputA[0:<2**N/2>] inputB[0:<2**N/2>]
+b=multiplexerArrayP<N-1> inputControl[<2**N/2>:<2**N>] inputA[<2**N/2>:<2**N>] inputB[<2**N/2>:<2**N>]
+output=concat<2**N/2>_<2**N/2> a b
+
+
+
+multiplexer1:
+
+output: out
+
+inputControl: in
+input: in 2
+
+output=multiplexer inputControl input[0] input[1]
+
+
+
+multiplexer<N=2...16>:
+
+output: out
+
+inputControl: in <N>
+input: in <2**N>
+
+a=multiplexer<N-1> inputControl[0:<N-1>] input[0:<2**N/2>]
+b=multiplexer<N-1> inputControl[0:<N-1>] input[<2**N/2>:<2**N>]
+output=multiplexer inputControl[<N-1>] a b
+
+
+
+addressableMemory<N=2...16>_1:
+
+output: out
+
+addressForOutput: in <N>
+inputEnable: in
+addressForInput: in <N>
+input: in
+
+memory: reg <2**N>
+
+output=multiplexer<N> addressForOutput memory
+memoryChange=demultiplexer<N> addressForInput inputEnable
+inputFannedOut=fanOutP<N> input
+memory=multiplexerArrayP<N> memoryChange memory inputFannedOut
+
+
+
+addressableMemory<ADDRESS=2...16>_<WORD=2,4,8,16>:
+
+output: out <WORD>
+
+addressForOutput: in <ADDRESS>
+inputEnable: in
+addressForInput: in <ADDRESS>
+input: in <WORD>
+
+a=addressableMemory<ADDRESS>_<WORD/2> addressForOutput inputEnable addressForInput input[0:<WORD/2>]
+b=addressableMemory<ADDRESS>_<WORD/2> addressForOutput inputEnable addressForInput input[<WORD/2>:<WORD>]
+output=concat<WORD/2>_<WORD/2> a b
+
+
+
+
+
+
+
+main:
+
+output: out 16
+outputEnable: out
+
+input: in 16
+
+valueReg: reg 16
+
+inputPlusSomething _=add16 input 2 0
+oldValue=addressableMemory8_16 input[0:8] 1 inputPlusSomething[0:8] result
+
+firstStep=equal16 valueReg 0
+lastResult=ternaryOperator16 firstStep valueReg 1
+
+result _=add16 lastResult oldValue 0
+valueReg=set16 result
+
+output=set16 result
+outputEnable=set 1
