@@ -18,7 +18,7 @@ output=concat<N-1>_1 a b
 
 
 
-<NAME=and,or,xor>1:
+<NAME=nand,and,or,xor,nor,andnot>1:
 
 output: out
 inputA: in
@@ -28,7 +28,7 @@ output=<NAME> inputA inputB
 
 
 
-<NAME=and,or,xor><N=2...16>:
+<NAME=nand,and,or,xor,nor,andnot><N=2...16>:
 
 output: out <N>
 inputA: in <N>
@@ -116,6 +116,17 @@ inputB: in
 
 a=or inputA inputB
 output=not a
+
+
+
+andnot:
+
+output: out
+inputA: in
+inputB: in
+
+inputB_not=not inputB
+output=and inputA inputB_not
 
 
 
@@ -220,97 +231,279 @@ output=concat<N-1>_1 a b
 
 
 
+notzero1:
+
+output: out
+
+input: in
+
+output=set input
+
+
+
+notzero<S=2...16>:
+
+output: out
+
+input: in <S>
+
+a=notzero<S-1> input[0:<S-1>]
+output=or a input[<S-1>]
+
+
+
+notzeroP0:
+
+output: out
+
+input: in
+
+output=set input
+
+
+
+notzeroP<SIZEP=1...16>:
+
+output: out
+
+input: in <2**SIZEP>
+
+a=notzeroP<SIZEP-1> input[0:<2**SIZEP/2>]
+b=notzeroP<SIZEP-1> input[<2**SIZEP/2>:<2**SIZEP>]
+output=or a b
+
+
+
 bitShiftLeft1_<N=2...16>:
 
 output: out <N>
-outputCarry: out
+outputOverflow: out
 
 input: in <N>
 
 a=set<N-1> input[0:<N-1>]
 output=concat1_<N-1> 0 a
-outputCarry=set input[<N-1>]
+outputOverflow=set input[<N-1>]
 
 
 
 bitShiftRightUnsigned1_<N=2...16>:
 
 output: out <N>
-outputCarry: out
+outputOverflow: out
 
 input: in <N>
 
 a=set<N-1> input[1:<N>]
 output=concat<N-1>_1 a 0
-outputCarry=set input[0]
+outputOverflow=set input[0]
 
 
 
 bitShiftRightSigned1_<N=2...16>:
 
 output: out <N>
-outputCarry: out
+outputOverflow: out
 
 input: in <N>
 
 a=set<N-1> input[1:<N>]
 output=concat<N-1>_1 a input[<N-1>]
-outputCarry=set input[0]
+outputOverflow=set input[0]
 
 
 
 <NAME=bitShiftLeft,bitShiftRightUnsigned,bitShiftRightSigned><SHIFT=2...15>_<N=2...16>:
 
 output: out <N>
-outputCarry: out
+outputOverflow: out
 
 input: in <N>
 
-a carryA=<NAME><SHIFT-1>_<N> input
-output carryB=<NAME>1_<N> a
-outputCarry=or carryA carryB
+a overflowA=<NAME><SHIFT-1>_<N> input
+output overflowB=<NAME>1_<N> a
+outputOverflow=or overflowA overflowB
 
 
 
-<NAME=bitShiftLeft,bitShiftRightUnsigned,bitShiftRightSigned>N_P<P=4>_step1:
+bitShiftLeft1_P<P=1...16>:
 
 output: out <2**P>
-outputCarry: out
+outputOverflow: out
+
+input: in <2**P>
+
+a=set<2**P-1> input[0:<2**P-1>]
+output=concat1_<2**P-1> 0 a
+outputOverflow=set input[<2**P-1>]
+
+
+
+bitShiftRightUnsigned1_P<P=1...16>:
+
+output: out <2**P>
+outputOverflow: out
+
+input: in <2**P>
+
+a=set<2**P-1> input[1:<2**P>]
+output=concat<2**P-1>_1 a 0
+outputOverflow=set input[0]
+
+
+
+bitShiftRightSigned1_P<P=1...16>:
+
+output: out <2**P>
+outputOverflow: out
+
+input: in <2**P>
+
+a=set<2**P-1> input[1:<2**P>]
+output=concat<2**P-1>_1 a input[<2**P-1>]
+outputOverflow=set input[0]
+
+
+
+bitShiftLeftP<SHIFTP=0...15>_P<SIZEP=1...16>:
+<?(SHIFTP<SIZEP)>
+
+output: out <2**SIZEP>
+outputOverflow: out
+
+input: in <2**SIZEP>
+
+output=concat<2**SHIFTP>_<2**SIZEP-2**SHIFTP> 0 input[0:<2**SIZEP-2**SHIFTP>]
+outputOverflow=notzeroP<SHIFTP> input[<2**SIZEP-2**SHIFTP>:<2**SIZEP>]
+
+
+
+bitShiftRightUnsignedP<SHIFTP=0...15>_P<SIZEP=1...16>:
+<?(SHIFTP<SIZEP)>
+
+output: out <2**SIZEP>
+outputOverflow: out
+
+input: in <2**SIZEP>
+
+output=concat<2**SIZEP-2**SHIFTP>_<2**SHIFTP> input[0:<2**SIZEP-2**SHIFTP>] 0
+outputOverflow=notzeroP<SHIFTP> input[0:<2**SHIFTP>]
+
+
+
+bitShiftRightSignedP<SHIFTP=0...15>_P<SIZEP=1...16>:
+<?(SHIFTP<SIZEP)>
+
+output: out <2**SIZEP>
+outputOverflow: out
+
+input: in <2**SIZEP>
+
+extendedSign=fanOutP<SHIFTP> input[<2**SIZEP-1>]
+output=concat<2**SIZEP-2**SHIFTP>_<2**SHIFTP> input[<2**SHIFTP>:<2**SIZEP>] extendedSign
+outputOverflow=notzeroP<SHIFTP> input[0:<2**SHIFTP>]
+
+
+
+<NAME=bitShiftLeft,bitShiftRightUnsigned,bitShiftRightSigned>N_P<P=1...16>_step1:
+
+output: out <2**P>
+outputOverflow: out
 
 inputA: in <2**P>
 inputB: in
 
-b carryB=<NAME>1_<2**P> inputA
-output=ternaryOperator<2**P> inputB[0] inputA b
-outputCarry=and carryB inputB[0]
+b overflowB=<NAME>1_P<P> inputA
+output=ternaryOperatorP<P> inputB[0] inputA b
+outputOverflow=and overflowB inputB[0]
 
 
 
-<NAME=bitShiftLeft,bitShiftRightUnsigned,bitShiftRightSigned>N_P<P=4>_step<T=2...4>:
+<NAME=bitShiftLeft,bitShiftRightUnsigned,bitShiftRightSigned>N_P<P=1...16>_step<T=2...16>:
+<?(T<=P)>
 
 output: out <2**P>
-outputCarry: out
+outputOverflow: out
 
 inputA: in <2**P>
 inputB: in <T>
 
-a carryA=<NAME>N_P<P>_step<T-1> inputA[0:<2**P>] inputB[0:<T-1>]
-b carryB=<NAME><2**T/2>_<2**P> a
-output=ternaryOperator<2**P> inputB[<T-1>] a b
-carryB_effect=and carryB inputB[<T-1>]
-outputCarry=or carryA carryB_effect
+a overflowA=<NAME>N_P<P>_step<T-1> inputA inputB[0:<T-1>]
+b overflowB=<NAME>P<T-1>_P<P> a
+output=ternaryOperatorP<P> inputB[<T-1>] a b
+overflowB_effect=and overflowB inputB[<T-1>]
+outputOverflow=or overflowA overflowB_effect
 
 
 
-<NAME=bitShiftLeft,bitShiftRightUnsigned,bitShiftRightSigned>N_P<P=4>:
+<NAME=bitShiftLeft,bitShiftRightUnsigned,bitShiftRightSigned>N_P<P=1...16>:
 
 output: out <2**P>
-outputCarry: out
+outputOverflow: out
 
 inputA: in <2**P>
 inputB: in <P>
 
-output outputCarry=<NAME>N_P<P>_step<P> inputA inputB
+output outputOverflow=<NAME>N_P<P>_step<P> inputA inputB
+
+
+
+bitRotateLeftP<ROTP=0...15>_P<SIZEP=1...16>:
+<?(ROTP<SIZEP)>
+
+output: out <2**SIZEP>
+
+input: in <2**SIZEP>
+
+output=concat<2**ROTP>_<2**SIZEP-2**ROTP> input[<2**SIZEP-2**ROTP>:<2**SIZEP>] input[0:<2**SIZEP-2**ROTP>]
+
+
+
+bitRotateRightP<ROTP=0...15>_P<SIZEP=1...16>:
+<?(ROTP<SIZEP)>
+
+output: out <2**SIZEP>
+
+input: in <2**SIZEP>
+
+output=concat<2**SIZEP-2**ROTP>_<2**ROTP> input[<2**ROTP>:<2**SIZEP>] input[0:<2**ROTP>]
+
+
+
+<NAME=bitRotateLeft,bitRotateRight>N_P<SIZEP=1...16>_step0:
+
+output: out <2**SIZEP>
+
+inputA: in <2**SIZEP>
+inputB: in <SIZEP>
+
+b=<NAME>P0_P<SIZEP> inputA
+output=ternaryOperatorP<SIZEP> inputB[0] inputA b
+
+
+
+<NAME=bitRotateLeft,bitRotateRight>N_P<SIZEP=1...16>_step<STEP=1...15>:
+<?(SIZEP>STEP)>
+
+output: out <2**SIZEP>
+
+inputA: in <2**SIZEP>
+inputB: in <SIZEP>
+
+a=<NAME>N_P<SIZEP>_step<STEP-1> inputA inputB
+b=<NAME>P<STEP>_P<SIZEP> a
+output=ternaryOperatorP<SIZEP> inputB[<STEP>] a b
+
+
+
+<NAME=bitRotateLeft,bitRotateRight>N_P<SIZEP=1...16>:
+
+output: out <2**SIZEP>
+
+inputA: in <2**SIZEP>
+inputB: in <SIZEP>
+
+output=<NAME>N_P<SIZEP>_step<SIZEP-1> inputA inputB
 
 
 
@@ -354,6 +547,7 @@ outputOverflow=set 0
 
 
 mul<S=2...16>_<N=2...16>:
+<?(S>=N)>
 
 output: out <S>
 outputOverflow: out
@@ -401,8 +595,8 @@ output: out
 inputA: in
 inputB: in
 
-inputANot=not inputA
-output=and inputANot inputB
+inputA_not=not inputA
+output=and inputA_not inputB
 
 
 
@@ -438,7 +632,8 @@ output=ternaryOperator1 differentSigns c inputA[<S-1>]
 
 
 
-divUnsigned<S=16>_step<BIT=0...15>:
+divUnsigned<S=2...16>_step<BIT=0...15>:
+<?(S>BIT)>
 
 outputQuotientBit: out
 outputRemainder: out <S>
@@ -456,7 +651,8 @@ outputRemainder=ternaryOperator<S> bit b a
 
 
 
-divUnsigned<S=16>_stepsToBit<BIT=16>:
+divUnsigned<S=2...16>_stepsToBit<BIT=2...16>:
+<?(S==BIT)>
 
 outputQuotient: out <S>
 outputRemainder: out <S>
@@ -470,7 +666,8 @@ outputRemainder=set<S> 0
 
 
 
-divUnsigned<S=16>_stepsToBit<BIT=0...15>:
+divUnsigned<S=2...16>_stepsToBit<BIT=0...15>:
+<?(S>BIT)>
 
 outputQuotient: out <S>
 outputRemainder: out <S>
@@ -485,7 +682,7 @@ outputQuotient=concat1_<S-1> quotientNewBit quotient[0:<S-1>]
 
 
 
-divUnsigned<S=16>:
+divUnsigned<S=2...16>:
 
 outputQuotient: out <S>
 outputRemainder: out <S>
@@ -509,7 +706,7 @@ output=ternaryOperator<S> input[<S-1>] input negated
 
 
 
-divSigned<S=16>:
+divSigned<S=2...16>:
 
 outputQuotient: out <S>
 outputRemainder: out <S>
@@ -575,8 +772,8 @@ output: out 2
 
 input: in
 
-inputNot=not input
-output=concat1_1 inputNot input
+input_not=not input
+output=concat1_1 input_not input
 
 
 
@@ -616,8 +813,8 @@ outputB: out
 inputControl: in
 input: in
 
-inputControlNot=not inputControl
-outputA=and inputControlNot input
+inputControl_not=not inputControl
+outputA=and inputControl_not input
 outputB=and inputControl input
 
 
@@ -658,6 +855,19 @@ inputB: in <N>
 
 control=fanOut<N> inputControl
 output=multiplexerArray<N> control inputA inputB
+
+
+
+ternaryOperatorP<SIZEP=0...16>:
+
+output: out <2**SIZEP>
+
+inputControl: in
+inputA: in <2**SIZEP>
+inputB: in <2**SIZEP>
+
+control=fanOutP<SIZEP> inputControl
+output=multiplexerArrayP<SIZEP> control inputA inputB
 
 
 
@@ -818,7 +1028,7 @@ output=chooseAB<S> inputControl[2] a b
 
 
 
-orABCD:
+<NAME=or,and,xor>ABCD:
 
 output: out
 
@@ -827,12 +1037,12 @@ inputB: in
 inputC: in
 inputD: in
 
-a=orABC inputA inputB inputC
-output=or a inputD
+a=<NAME>ABC inputA inputB inputC
+output=<NAME> a inputD
 
 
 
-orABCDE:
+<NAME=or,and,xor>ABCDE:
 
 output: out
 
@@ -842,12 +1052,12 @@ inputC: in
 inputD: in
 inputE: in
 
-a=orABCD inputA inputB inputC inputD
-output=or a inputE
+a=<NAME>ABCD inputA inputB inputC inputD
+output=<NAME> a inputE
 
 
 
-orABCDEF:
+<NAME=or,and,xor>ABCDEF:
 
 output: out
 
@@ -858,12 +1068,12 @@ inputD: in
 inputE: in
 inputF: in
 
-a=orABCDE inputA inputB inputC inputD inputE
-output=or a inputF
+a=<NAME>ABCDE inputA inputB inputC inputD inputE
+output=<NAME> a inputF
 
 
 
-orABCDEFG:
+<NAME=or,and,xor>ABCDEFG:
 
 output: out
 
@@ -875,8 +1085,8 @@ inputE: in
 inputF: in
 inputG: in
 
-a=orABCDEF inputA inputB inputC inputD inputE inputF
-output=or a inputG
+a=<NAME>ABCDEF inputA inputB inputC inputD inputE inputF
+output=<NAME> a inputG
 
 
 
@@ -1094,8 +1304,7 @@ executionStarted: reg
 started=set 1
 _nextExecutionStarted=or executionStarted inputCodeStop
 executionStarted=set _nextExecutionStarted
-executionStarted_not=not executionStarted
-executionIsGoingToStartAtNextCycle=and _nextExecutionStarted executionStarted_not
+executionIsGoingToStartAtNextCycle=andnot _nextExecutionStarted executionStarted
 
 copyCode=nor executionStarted inputCodeStop
 copyCode_counter _=inc16 copyCode_counter copyCode
@@ -1172,8 +1381,7 @@ parameterByteExtraB_updatedAOT=chooseAB8 instructionStage_readParameter_byteExtr
 
 
 parameter_readExtra _ _ _=decodeParameterByte parameterByte_updatedAOT
-_parameter_readExtra_not=not parameter_readExtra
-_parameter_read_end_a=and instructionStage_readParameter_byte _parameter_readExtra_not
+_parameter_read_end_a=andnot instructionStage_readParameter_byte parameter_readExtra
 parameter_read_end=or _parameter_read_end_a instructionStage_readParameter_byteExtraB
 
 
@@ -1327,6 +1535,92 @@ readFromRegister_value=addressableMemory5_16 readFromRegister_address writeToReg
 
 output=chooseAB16 putOutput 0 putOutput_value
 outputEnable=set putOutput
+
+
+
+bitRotateExtendP<P=1...16>_<S=1...16>:
+<?(2**P>S)>
+
+output: out <2**P>
+
+inputRotation: in <P>
+input: in <S>
+
+a=concat<S>_<2**P-S> input 0
+output=bitRotateLeftN_P<P> a inputRotation
+
+
+
+bitRotateExtractP<P=1...16>_<S=1...16>:
+<?(2**P>S)>
+
+output: out <S>
+
+inputRotation: in <P>
+input: in <2**P>
+
+a=bitRotateRightN_P<P> input inputRotation
+output=set<S> a[0:<S>]
+
+
+
+addressableMemoryConsecutiveWords<ADDRESS=1...16>_1_<SEQ=1,2,4,8,16>:
+<?(2**ADDRESS>SEQ)>
+
+output: out <SEQ>
+
+addressForOutput: in <ADDRESS>
+writeMaskForInput: in <SEQ>
+addressForInput: in <ADDRESS>
+input: in <SEQ>
+
+memory: reg <2**ADDRESS>
+
+memoryWriteMask=bitRotateExtendP<ADDRESS>_<SEQ> addressForInput writeMaskForInput
+memoryInput=bitRotateExtendP<ADDRESS>_<SEQ> addressForInput input
+memory=multiplexerArrayP<ADDRESS> memoryWriteMask memory memoryInput
+
+output=bitRotateExtractP<ADDRESS>_<SEQ> addressForOutput memory
+
+
+
+addressableMemoryConsecutiveWords<ADDRESS=1...16>_<WORD=2,4,8,16>_<SEQ=1,2,4,8,16>:
+<?(2**ADDRESS>SEQ)>
+
+output: out <WORD*SEQ>
+
+addressForOutput: in <ADDRESS>
+writeMaskForInput: in <SEQ>
+addressForInput: in <ADDRESS>
+input: in <WORD*SEQ>
+
+_output_a=addressableMemoryConsecutiveWords<ADDRESS>_<WORD/2>_<SEQ> addressForOutput writeMaskForInput addressForInput input[0:<WORD*SEQ/2>]
+_output_b=addressableMemoryConsecutiveWords<ADDRESS>_<WORD/2>_<SEQ> addressForOutput writeMaskForInput addressForInput input[<WORD*SEQ/2>:<WORD*SEQ>]
+output=concat<WORD/2*SEQ>_<WORD/2*SEQ> _output_a _output_b
+
+
+
+computerB<ADDRESS=5...16>:
+
+output: out 16
+outputEnable: out
+
+input: in 8
+inputCodeStop: in
+
+registers: reg 512
+
+registers=set512 registers
+
+readFromMemory_address=set<ADDRESS> 0
+writeToMemory_mask=set16 0
+writeToMemory_address=set<ADDRESS> 0
+writeToMemory_value=set128 0
+
+readFromMemory_value=addressableMemoryConsecutiveWords<ADDRESS>_8_16 readFromMemory_address writeToMemory_mask writeToMemory_address writeToMemory_value
+
+output=set16 0
+outputEnable=set 0
 
 
 

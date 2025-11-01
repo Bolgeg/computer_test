@@ -372,22 +372,43 @@ class ComputerBuilder
 			}
 			int resolveLineIndex(int lineIndex)
 			{
-				if(lineIndex>=0 && lineIndex<lineIndexToOriginalLineIndex.size())
+				if(originalLinesProcessed)
 				{
-					return lineIndexToOriginalLineIndex[lineIndex];
+					if(lineIndex>=0 && lineIndex<lineIndexToOriginalLineIndex.size())
+					{
+						return lineIndexToOriginalLineIndex[lineIndex];
+					}
+					else
+					{
+						return 1000000+lineIndex;
+					}
 				}
 				else
 				{
-					return 1000000+lineIndex;
+					return lineIndex;
 				}
+			}
+			string errorString(const string& errorMessage,int lineIndex)
+			{
+				int originalLineIndex=resolveLineIndex(lineIndex);
+				
+				string lineContent;
+				if(originalLineIndex>=0 && originalLineIndex<originalLines.size())
+				{
+					lineContent+=string(":\n")+originalLines[originalLineIndex];
+					if(lineIndex>=0 && lineIndex<lines.size() && lines[lineIndex]!=originalLines[originalLineIndex])
+					{
+						lineContent+=string("\n|\nv\n")+lines[lineIndex];
+					}
+				}
+				
+				return string("Error: ")+errorMessage+"\n"+"at line "+std::to_string(originalLineIndex+1)+lineContent;
 			}
 			string errorString(int errorCode,int lineIndex)
 			{
-				int originalLineIndex=lineIndex;
-				if(originalLinesProcessed) originalLineIndex=resolveLineIndex(lineIndex);
-				
-				return string("ERROR_")+std::to_string(errorCode)+" at line "+std::to_string(originalLineIndex+1);
+				return errorString(string("ERROR_")+std::to_string(errorCode),lineIndex);
 			}
+			
 			bool isValidIdentifier(const string& identifier)
 			{
 				if(identifier.size()==0) return false;
@@ -404,13 +425,26 @@ class ComputerBuilder
 			}
 			
 			template<class T>
-			int findWithName(const vector<T>& v,const string& name)
+			static int findWithName(const vector<T>& v,const string& name)
 			{
 				for(int i=0;i<v.size();i++)
 				{
 					if(v[i].name==name) return i;
 				}
 				return -1;
+			}
+			static bool stringToIntSimple(const string& str,int& value)
+			{
+				try
+				{
+					value=std::stoi(str);
+					if(std::to_string(value)!=str) throw 1;
+					return true;
+				}
+				catch(...)
+				{
+					return false;
+				}
 			}
 			
 			vector<string> splitStringAtSpaces(const string& line)
@@ -495,11 +529,19 @@ class ComputerBuilder
 			{
 				vector<string> strs;
 				string str;
+				int parenthesisLevel=0;
 				for(size_t p=0;p<line.size();p++)
 				{
+					bool insideTemplateExpression= str.size()>0 && str[0]=='<';
+					
+					bool ignoreTemplateSigns= insideTemplateExpression && parenthesisLevel>0;
+					
 					uint8_t c=line[p];
 					
-					if(c=='<')
+					if(c=='(') parenthesisLevel++;
+					else if(c==')') parenthesisLevel--;
+					
+					if(c=='<' && !ignoreTemplateSigns)
 					{
 						if(str.size()>0)
 						{
@@ -507,12 +549,16 @@ class ComputerBuilder
 							str=string();
 						}
 						str.push_back(c);
+						
+						parenthesisLevel=0;
 					}
-					else if(c=='>')
+					else if(c=='>' && !ignoreTemplateSigns)
 					{
 						str.push_back(c);
 						strs.emplace_back(str);
 						str=string();
+						
+						parenthesisLevel=0;
 					}
 					else
 					{
@@ -562,96 +608,616 @@ class ComputerBuilder
 				}
 			};
 			
-			bool removeStringStartWith(string& str,const string& ref)
+			class TemplateExpressionEvaluator
 			{
-				if(stringStartsWith(str,ref))
+				public:
+				
+				private:
+					class Code
+					{
+						public:
+						
+						vector<string> tokens;
+						
+						Code(){}
+						explicit Code(const string& codeString)
+						{
+							tokens=tokenize(codeString);
+						}
+						
+						static vector<string> tokenize(const string& codeString)
+						{
+							vector<string> outputTokens;
+							string wordToken;
+							for(size_t p=0;p<codeString.size();p++)
+							{
+								uint8_t c=codeString[p];
+								
+								if(isCharacterOfWordToken(c))
+								{
+									wordToken.push_back(c);
+								}
+								else
+								{
+									if(wordToken.size()>0)
+									{
+										outputTokens.push_back(wordToken);
+										wordToken=string();
+									}
+									outputTokens.emplace_back(1,c);
+								}
+							}
+							if(wordToken.size()>0)
+							{
+								outputTokens.push_back(wordToken);
+								wordToken=string();
+							}
+							return outputTokens;
+						}
+						static string untokenize(const vector<string>& inputTokens)
+						{
+							string str;
+							for(size_t t=0;t<inputTokens.size();t++)
+							{
+								str+=inputTokens[t];
+							}
+							return str;
+						}
+						
+						private:
+							static bool isCharacterOfWordToken(uint8_t c)
+							{
+								return c>='a' && c<='z' || c>='A' && c<='Z' || c>='0' && c<='9' || c=='_';
+							}
+							static bool isDigit(uint8_t c)
+							{
+								return c>='0' && c<='9';
+							}
+						public:
+						
+						static bool isWordToken(const string& token)
+						{
+							return token.size()>0 && isCharacterOfWordToken(token[0]);
+						}
+						
+						static bool isIdentifierToken(const string& token)
+						{
+							return token.size()>0 && isCharacterOfWordToken(token[0]) && !isDigit(token[0]);
+						}
+						static bool isNumberToken(const string& token)
+						{
+							return token.size()>0 && isDigit(token[0]);
+						}
+					};
+					
+					static string errorString(int errorCode)
+					{
+						return string("ERROR_")+std::to_string(errorCode);
+					}
+					
+					string getTemplateArgumentWithName(const string& name,const vector<TemplateArgument>& templateArguments)
+					{
+						int argumentIndex=findWithName(templateArguments,name);
+						if(argumentIndex==-1) throw errorString(__LINE__);
+						
+						return templateArguments[argumentIndex].value;
+					}
+					
+					class Function
+					{
+						public:
+						
+						string name;
+						vector<string> nameTokens;
+						
+						int numberOfArguments=-1;
+						
+						std::function<string(const vector<string>&)> function;
+						
+						Function(){}
+						Function(const string& _name,const std::function<string(const vector<string>&)>& _function)
+						{
+							name=_name;
+							nameTokens=Code::tokenize(name);
+							
+							function=_function;
+						}
+						
+						void setFixedNumberOfArguments(int _numberOfArguments)
+						{
+							numberOfArguments=_numberOfArguments;
+						}
+						string execute(const vector<string>& args)
+						{
+							if(numberOfArguments!=-1)
+							{
+								if(args.size()!=numberOfArguments) throw errorString(__LINE__);
+							}
+							return function(args);
+						}
+					};
+					
+					void setFixedNumberOfArguments(vector<Function>& functionsToModify,int numberOfArguments)
+					{
+						for(int f=0;f<functionsToModify.size();f++)
+						{
+							functionsToModify[f].setFixedNumberOfArguments(numberOfArguments);
+						}
+					}
+					
+					static int stringToInt(const string& str)
+					{
+						int intValue=0;
+						if(!stringToIntSimple(str,intValue)) throw errorString(__LINE__);
+						return intValue;
+					}
+					static string intToString(int intValue)
+					{
+						return std::to_string(intValue);
+					}
+					static void assertDivision(int dividend,int divisor)
+					{
+						if(divisor==0 || dividend==int(uint32_t(1)<<31) && divisor==-1)
+						{
+							throw errorString(__LINE__);
+						}
+					}
+					
+					vector<Function> unaryOperators=vector<Function>
+					{
+						Function("-",[this](const vector<string>& args)->string
+						{
+							return intToString(-stringToInt(args[0]));
+						}),
+						Function("~",[this](const vector<string>& args)->string
+						{
+							return intToString(~stringToInt(args[0]));
+						}),
+						Function("!",[this](const vector<string>& args)->string
+						{
+							return intToString(!stringToInt(args[0]));
+						})
+					};
+					
+					vector<Function> binaryOperators=vector<Function>
+					{
+						Function("**",[this](const vector<string>& args)->string
+						{
+							int a=stringToInt(args[0]);
+							int b=stringToInt(args[1]);
+							
+							int r=0;
+							if(a==0 && b==0) throw errorString(__LINE__);
+							
+							if(a!=0 && b>=0)
+							{
+								r=1;
+								for(int i=0;i<b;i++)
+								{
+									if(r*a/a!=r) throw errorString(__LINE__);
+									r*=a;
+								}
+							}
+							
+							return intToString(r);
+						}),
+						Function("*",[this](const vector<string>& args)->string
+						{
+							return intToString(stringToInt(args[0])*stringToInt(args[1]));
+						}),
+						Function("/",[this](const vector<string>& args)->string
+						{
+							int a=stringToInt(args[0]);
+							int b=stringToInt(args[1]);
+							assertDivision(a,b);
+							return intToString(a/b);
+						}),
+						Function("%",[this](const vector<string>& args)->string
+						{
+							int a=stringToInt(args[0]);
+							int b=stringToInt(args[1]);
+							assertDivision(a,b);
+							return intToString(a%b);
+						}),
+						Function("+",[this](const vector<string>& args)->string
+						{
+							return intToString(stringToInt(args[0])+stringToInt(args[1]));
+						}),
+						Function("-",[this](const vector<string>& args)->string
+						{
+							return intToString(stringToInt(args[0])-stringToInt(args[1]));
+						}),
+						Function("<<",[this](const vector<string>& args)->string
+						{
+							int a=stringToInt(args[0]);
+							int b=stringToInt(args[1]);
+							if(b<0) throw errorString(__LINE__);
+							int c= b<32 ? (a<<b) : 0;
+							return intToString(c);
+						}),
+						Function(">>",[this](const vector<string>& args)->string
+						{
+							int a=stringToInt(args[0]);
+							int b=stringToInt(args[1]);
+							if(b<0) throw errorString(__LINE__);
+							int c= b<32 ? (a>>b) : 0;
+							return intToString(c);
+						}),
+						Function(">>>",[this](const vector<string>& args)->string
+						{
+							int a=stringToInt(args[0]);
+							int b=stringToInt(args[1]);
+							if(b<0) throw errorString(__LINE__);
+							int c= b<32 ? int(uint32_t(a)>>b) : 0;
+							return intToString(c);
+						}),
+						Function("<",[this](const vector<string>& args)->string
+						{
+							return intToString(stringToInt(args[0])<stringToInt(args[1]));
+						}),
+						Function("<=",[this](const vector<string>& args)->string
+						{
+							return intToString(stringToInt(args[0])<=stringToInt(args[1]));
+						}),
+						Function(">",[this](const vector<string>& args)->string
+						{
+							return intToString(stringToInt(args[0])>stringToInt(args[1]));
+						}),
+						Function(">=",[this](const vector<string>& args)->string
+						{
+							return intToString(stringToInt(args[0])>=stringToInt(args[1]));
+						}),
+						Function("==",[this](const vector<string>& args)->string
+						{
+							return intToString(stringToInt(args[0])==stringToInt(args[1]));
+						}),
+						Function("!=",[this](const vector<string>& args)->string
+						{
+							return intToString(stringToInt(args[0])!=stringToInt(args[1]));
+						}),
+						Function("&",[this](const vector<string>& args)->string
+						{
+							return intToString(stringToInt(args[0])&stringToInt(args[1]));
+						}),
+						Function("^",[this](const vector<string>& args)->string
+						{
+							return intToString(stringToInt(args[0])^stringToInt(args[1]));
+						}),
+						Function("|",[this](const vector<string>& args)->string
+						{
+							return intToString(stringToInt(args[0])|stringToInt(args[1]));
+						}),
+						Function("&&",[this](const vector<string>& args)->string
+						{
+							return intToString(stringToInt(args[0])&&stringToInt(args[1]));
+						}),
+						Function("||",[this](const vector<string>& args)->string
+						{
+							return intToString(stringToInt(args[0])||stringToInt(args[1]));
+						})
+					};
+					vector<vector<string>> binaryOperatorLevels=vector<vector<string>>
+					{
+						vector<string>{"**"},
+						vector<string>{"*","/","%"},
+						vector<string>{"+","-"},
+						vector<string>{"<<",">>",">>>"},
+						vector<string>{"<","<=",">",">="},
+						vector<string>{"==","!="},
+						vector<string>{"&"},
+						vector<string>{"^"},
+						vector<string>{"|"},
+						vector<string>{"&&"},
+						vector<string>{"||"}
+					};
+					
+					Function ternaryOperator=Function("?",[this](const vector<string>& args)->string
+					{
+						return intToString(stringToInt(args[0])?stringToInt(args[1]):stringToInt(args[2]));
+					});
+					
+					vector<Function> functions=vector<Function>{
+						Function("isp2",[this](const vector<string>& args)->string
+						{
+							if(args.size()!=1) throw errorString(__LINE__);
+							
+							int a=stringToInt(args[0]);
+							int r=a>0 && std::has_single_bit(uint32_t(a));
+							
+							return intToString(r);
+						}),
+						Function("log2",[this](const vector<string>& args)->string
+						{
+							if(args.size()!=1) throw errorString(__LINE__);
+							
+							int a=stringToInt(args[0]);
+							if(a<=0) throw errorString(__LINE__);
+							int r=int(std::countr_zero(std::bit_floor(uint32_t(a))));
+							
+							return intToString(r);
+						}),
+						Function("p2floor",[this](const vector<string>& args)->string
+						{
+							if(args.size()!=1) throw errorString(__LINE__);
+							
+							int a=stringToInt(args[0]);
+							if(a<=0) throw errorString(__LINE__);
+							int r=int(std::bit_floor(uint32_t(a)));
+							
+							return intToString(r);
+						}),
+						Function("p2ceil",[this](const vector<string>& args)->string
+						{
+							if(args.size()!=1) throw errorString(__LINE__);
+							
+							int a=stringToInt(args[0]);
+							if(a<=0 || a>(1<<30)) throw errorString(__LINE__);
+							int r=int(std::bit_ceil(uint32_t(a)));
+							
+							return intToString(r);
+						})
+					};
+				public:
+				
+				TemplateExpressionEvaluator()
 				{
-					str=str.substr(ref.size(),str.size()-ref.size());
-					return true;
+					setFixedNumberOfArguments(unaryOperators,1);
+					setFixedNumberOfArguments(binaryOperators,2);
+					ternaryOperator.setFixedNumberOfArguments(3);
 				}
-				else return false;
-			}
-			bool removeStringEndWith(string& str,const string& ref)
-			{
-				if(stringEndsWith(str,ref))
+				
+				private:
+					int getBinaryOperatorLevel(const string& op)
+					{
+						for(int i=0;i<binaryOperatorLevels.size();i++)
+						{
+							for(int j=0;j<binaryOperatorLevels[i].size();j++)
+							{
+								if(op==binaryOperatorLevels[i][j])
+								{
+									return binaryOperatorLevels.size()-i;
+								}
+							}
+						}
+						return 0;
+					}
+					int getMaximumBinaryOperatorLevel()
+					{
+						return binaryOperatorLevels.size()+1;
+					}
+					
+					bool parseOperator(const Code& code,size_t& tokenIndex,string& outputOp,const vector<Function>& operators)
+					{
+						size_t t=tokenIndex;
+						vector<int> matches(operators.size(),true);
+						vector<string> candidate;
+						for(;;)
+						{
+							if(t>=code.tokens.size()) break;
+							
+							string token=code.tokens[t];
+							
+							candidate.push_back(token);
+							
+							int matchIndex=-1;
+							for(int o=0;o<matches.size();o++)
+							{
+								if(!matches[o]) continue;
+								
+								if(operators[o].nameTokens.size()<candidate.size()) matches[o]=false;
+								else matches[o]= operators[o].nameTokens[candidate.size()-1]==candidate[candidate.size()-1];
+								
+								if(matches[o]) matchIndex=o;
+							}
+							
+							if(matchIndex==-1)
+							{
+								candidate.resize(candidate.size()-1);
+								break;
+							}
+							
+							t++;
+						}
+						
+						if(candidate.size()==0) return false;
+						
+						tokenIndex=t;
+						outputOp=Code::untokenize(candidate);
+						return true;
+					}
+					bool parseUnaryOperator(const Code& code,size_t& t,string& op)
+					{
+						return parseOperator(code,t,op,unaryOperators);
+					}
+					bool parseBinaryOperator(const Code& code,size_t& t,string& op)
+					{
+						return parseOperator(code,t,op,binaryOperators);
+					}
+					bool parseFunctionName(const Code& code,size_t& t,string& functionName)
+					{
+						string token=code.tokens[t];
+						if(findWithName(functions,token)!=-1)
+						{
+							functionName=token;
+							t++;
+							return true;
+						}
+						else return false;
+					}
+					
+					string executeUnaryOperator(const string& op,const string& a)
+					{
+						int index=findWithName(unaryOperators,op);
+						if(index!=-1)
+						{
+							return unaryOperators[index].execute(vector<string>{a});
+						}
+						else throw errorString(__LINE__);
+					}
+					string executeBinaryOperator(const string& op,const string& a,const string& b)
+					{
+						int index=findWithName(binaryOperators,op);
+						if(index!=-1)
+						{
+							return binaryOperators[index].execute(vector<string>{a,b});
+						}
+						else throw errorString(__LINE__);
+					}
+					string executeTernaryOperator(const string& a,const string& b,const string& c)
+					{
+						return ternaryOperator.execute(vector<string>{a,b,c});
+					}
+					string executeFunction(const string& functionName,const vector<string>& args)
+					{
+						int index=findWithName(functions,functionName);
+						if(index!=-1)
+						{
+							return functions[index].execute(args);
+						}
+						else throw errorString(__LINE__);
+					}
+					
+					string evaluateExpressionPart(const Code& code,size_t& t,const vector<TemplateArgument>& templateArguments,int level)
+					{
+						if(t>=code.tokens.size()) throw errorString(__LINE__);
+						
+						string token=code.tokens[t];
+						
+						string lvalue;
+						
+						if(token=="(")
+						{
+							t++;
+							if(t>=code.tokens.size()) throw errorString(__LINE__);
+							lvalue=evaluateExpressionPart(code,t,templateArguments,0);
+							if(t>=code.tokens.size()) throw errorString(__LINE__);
+							if(code.tokens[t]!=")") throw errorString(__LINE__);
+							t++;
+						}
+						else if(Code::isIdentifierToken(token))
+						{
+							string functionName;
+							if(parseFunctionName(code,t,functionName))
+							{
+								if(t>=code.tokens.size()) throw errorString(__LINE__);
+								if(code.tokens[t]!="(") throw errorString(__LINE__);
+								t++;
+								if(t>=code.tokens.size()) throw errorString(__LINE__);
+								
+								vector<string> functionArguments;
+								
+								for(;;)
+								{
+									if(code.tokens[t]==")") break;
+									
+									functionArguments.push_back(evaluateExpressionPart(code,t,templateArguments,0));
+									
+									if(t>=code.tokens.size()) throw errorString(__LINE__);
+									if(code.tokens[t]==",")
+									{
+										t++;
+										if(t>=code.tokens.size()) throw errorString(__LINE__);
+									}
+									else if(code.tokens[t]!=")") throw errorString(__LINE__);
+								}
+								
+								lvalue=executeFunction(functionName,functionArguments);
+								
+								if(t>=code.tokens.size()) throw errorString(__LINE__);
+								if(code.tokens[t]!=")") throw errorString(__LINE__);
+								t++;
+							}
+							else
+							{
+								lvalue=getTemplateArgumentWithName(token,templateArguments);
+								t++;
+							}
+						}
+						else if(Code::isNumberToken(token))
+						{
+							lvalue=token;
+							t++;
+						}
+						else
+						{
+							string op;
+							if(parseUnaryOperator(code,t,op))
+							{
+								if(t>=code.tokens.size()) throw errorString(__LINE__);
+								lvalue=executeUnaryOperator(op,evaluateExpressionPart(code,t,templateArguments,getMaximumBinaryOperatorLevel()));
+							}
+							else throw errorString(__LINE__);
+						}
+						
+						for(;;)
+						{
+							if(t>=code.tokens.size()) break;
+							token=code.tokens[t];
+							if(token=="," || token==")") break;
+							
+							if(token=="?")
+							{
+								if(level>0) break;
+								
+								t++;
+								if(t>=code.tokens.size()) throw errorString(__LINE__);
+								
+								string valueA=evaluateExpressionPart(code,t,templateArguments,0);
+								
+								if(t>=code.tokens.size()) throw errorString(__LINE__);
+								if(code.tokens[t]!=":") throw errorString(__LINE__);
+								t++;
+								if(t>=code.tokens.size()) throw errorString(__LINE__);
+								
+								string valueB=evaluateExpressionPart(code,t,templateArguments,0);
+								
+								lvalue=executeTernaryOperator(lvalue,valueA,valueB);
+								
+								break;
+							}
+							
+							string op;
+							size_t tCopy=t;
+							if(parseBinaryOperator(code,t,op))
+							{
+								int operatorLevel=getBinaryOperatorLevel(op);
+								if(operatorLevel>level)
+								{
+									if(t>=code.tokens.size()) throw 1;
+									lvalue=executeBinaryOperator(op,lvalue,evaluateExpressionPart(code,t,templateArguments,operatorLevel));
+								}
+								else
+								{
+									t=tCopy;
+									break;
+								}
+							}
+							else throw errorString(__LINE__);
+						}
+						
+						return lvalue;
+					}
+				public:
+				
+				string evaluate(const string& expressionString,const vector<TemplateArgument>& templateArguments)
 				{
-					str=str.substr(0,str.size()-ref.size());
-					return true;
+					Code code(expressionString);
+					size_t t=0;
+					return evaluateExpressionPart(code,t,templateArguments,0);
 				}
-				else return false;
-			}
-			string getTemplateArgumentWithName(const string& name,const vector<TemplateArgument>& templateArguments,int lineIndex)
-			{
-				int argumentIndex=findWithName(templateArguments,name);
-				if(argumentIndex==-1) throw errorString(__LINE__,lineIndex);
-				
-				return templateArguments[argumentIndex].value;
-			}
-			int getTemplateArgumentIntegerValueWithName(const string& name,const vector<TemplateArgument>& templateArguments,int lineIndex)
-			{
-				string valueStr=getTemplateArgumentWithName(name,templateArguments,lineIndex);
-				
-				int value=0;
-				
-				if(!stringToIntSimple(valueStr,value)) throw errorString(__LINE__,lineIndex);
-				
-				return value;
-			}
+			};
+			
 			string getTemplateArgumentExpressionResult(const string& expressionString,const vector<TemplateArgument>& templateArguments,int lineIndex)
 			{
-				string str=expressionString;
-				
-				if(removeStringStartWith(str,"2**"))
+				TemplateExpressionEvaluator evaluator;
+				try
 				{
-					if(removeStringEndWith(str,"/2"))
-					{
-						int value=getTemplateArgumentIntegerValueWithName(str,templateArguments,lineIndex);
-						
-						if(value<1 || value>=32) throw errorString(__LINE__,lineIndex);
-						value=(1<<value)/2;
-						
-						return std::to_string(value);
-					}
-					else
-					{
-						int value=getTemplateArgumentIntegerValueWithName(str,templateArguments,lineIndex);
-						
-						if(value<0 || value>=31) throw errorString(__LINE__,lineIndex);
-						value=(1<<value);
-						
-						return std::to_string(value);
-					}
+					return evaluator.evaluate(expressionString,templateArguments);
 				}
-				else if(removeStringEndWith(str,"/2"))
+				catch(const string& str)
 				{
-					int value=getTemplateArgumentIntegerValueWithName(str,templateArguments,lineIndex);
-					
-					if(value%2!=0) throw errorString(__LINE__,lineIndex);
-					value/=2;
-					
-					return std::to_string(value);
-				}
-				else if(removeStringEndWith(str,"-1"))
-				{
-					int value=getTemplateArgumentIntegerValueWithName(str,templateArguments,lineIndex);
-					
-					if(value<=0) throw errorString(__LINE__,lineIndex);
-					value-=1;
-					
-					return std::to_string(value);
-				}
-				else if(removeStringEndWith(str,"+1"))
-				{
-					int value=getTemplateArgumentIntegerValueWithName(str,templateArguments,lineIndex);
-					
-					if(uint32_t(value)>=(uint32_t(1)<<31)-1) throw errorString(__LINE__,lineIndex);
-					value+=1;
-					
-					return std::to_string(value);
-				}
-				else
-				{
-					return getTemplateArgumentWithName(str,templateArguments,lineIndex);
+					int originalLineIndex=resolveLineIndex(lineIndex);
+					throw string("Error in expression evaluation at line ")+std::to_string(originalLineIndex+1)+":\n"+str;
 				}
 			}
 			
@@ -782,6 +1348,9 @@ class ComputerBuilder
 						}
 					}
 					
+					bool ignoreThisCombination=false;
+					vector<string> finalLines;
+					
 					for(size_t templateLineIndex=0;templateLineIndex<templateLines.size();templateLineIndex++)
 					{
 						string line=templateLines[templateLineIndex];
@@ -802,6 +1371,15 @@ class ComputerBuilder
 								{
 									str=str.substr(1,str.size()-2);
 									
+									if(str.size()==0) throw errorString(__LINE__,lineIndex);
+									
+									bool assertMode=false;
+									if(str[0]=='?')
+									{
+										assertMode=true;
+										str=str.substr(1,str.size()-1);
+									}
+									
 									if(templateLineIndex==0)
 									{
 										size_t equalSign=str.find_first_of("=");
@@ -816,7 +1394,20 @@ class ComputerBuilder
 									}
 									else
 									{
-										finalLine+=getTemplateArgumentExpressionResult(str,templateArguments,lineIndex);
+										string expressionResult=getTemplateArgumentExpressionResult(str,templateArguments,lineIndex);
+										
+										if(assertMode)
+										{
+											if(expressionResult=="0")
+											{
+												ignoreThisCombination=true;
+												break;
+											}
+										}
+										else
+										{
+											finalLine+=expressionResult;
+										}
 									}
 								}
 								else
@@ -826,7 +1417,21 @@ class ComputerBuilder
 							}
 						}
 						
-						addTemplateProcessedLine(finalLine,lineIndex);
+						if(ignoreThisCombination) break;
+						
+						finalLines.push_back(finalLine);
+					}
+					
+					if(!ignoreThisCombination)
+					{
+						for(size_t templateLineIndex=0;templateLineIndex<finalLines.size();templateLineIndex++)
+						{
+							string line=finalLines[templateLineIndex];
+							
+							size_t lineIndex=startOriginalLineIndex+templateLineIndex;
+							
+							addTemplateProcessedLine(line,lineIndex);
+						}
 					}
 				}
 			}
@@ -944,19 +1549,6 @@ class ComputerBuilder
 				}
 			}
 			
-			bool stringToIntSimple(const string& str,int& value)
-			{
-				try
-				{
-					value=std::stoi(str);
-					if(std::to_string(value)!=str) throw 1;
-					return true;
-				}
-				catch(...)
-				{
-					return false;
-				}
-			}
 			int getSetSizeInBits(const string& setString)
 			{
 				string name="set";
@@ -1102,7 +1694,8 @@ class ComputerBuilder
 										elementType=Component::Element::Type::component;
 										
 										componentIndex=findWithName(components,componentName);
-										if(componentIndex==-1 || componentIndex==thisComponentIndex) throw errorString(__LINE__,lineIndex);
+										if(componentIndex==-1) throw errorString("Component not found",lineIndex);
+										if(componentIndex==thisComponentIndex) throw errorString("Component using itself",lineIndex);
 										
 										for(int i=0;i<components[componentIndex].inputs.size();i++)
 										{
