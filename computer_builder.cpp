@@ -396,7 +396,7 @@ class ComputerBuilder
 				if(originalLineIndex>=0 && originalLineIndex<originalLines.size())
 				{
 					lineContent+=string(":\n")+originalLines[originalLineIndex];
-					if(lineIndex>=0 && lineIndex<lines.size() && lines[lineIndex]!=originalLines[originalLineIndex])
+					if(originalLinesProcessed && lineIndex>=0 && lineIndex<lines.size() && lines[lineIndex]!=originalLines[originalLineIndex])
 					{
 						lineContent+=string("\n|\nv\n")+lines[lineIndex];
 					}
@@ -694,11 +694,15 @@ class ComputerBuilder
 					{
 						return string("ERROR_")+std::to_string(errorCode);
 					}
+					static string errorString(const string& errorMessage)
+					{
+						return errorMessage;
+					}
 					
 					string getTemplateArgumentWithName(const string& name,const vector<TemplateArgument>& templateArguments)
 					{
 						int argumentIndex=findWithName(templateArguments,name);
-						if(argumentIndex==-1) throw errorString(__LINE__);
+						if(argumentIndex==-1) throw errorString(string()+"Variable named '"+name+"' not found");
 						
 						return templateArguments[argumentIndex].value;
 					}
@@ -710,17 +714,19 @@ class ComputerBuilder
 						string name;
 						vector<string> nameTokens;
 						
-						int numberOfArguments=-1;
-						
 						std::function<string(const vector<string>&)> function;
 						
+						int numberOfArguments=-1;
+						
 						Function(){}
-						Function(const string& _name,const std::function<string(const vector<string>&)>& _function)
+						Function(const string& _name,const std::function<string(const vector<string>&)>& _function,int _numberOfArguments=-1)
 						{
 							name=_name;
 							nameTokens=Code::tokenize(name);
 							
 							function=_function;
+							
+							numberOfArguments=_numberOfArguments;
 						}
 						
 						void setFixedNumberOfArguments(int _numberOfArguments)
@@ -731,7 +737,7 @@ class ComputerBuilder
 						{
 							if(numberOfArguments!=-1)
 							{
-								if(args.size()!=numberOfArguments) throw errorString(__LINE__);
+								if(args.size()!=numberOfArguments) throw errorString(wrongNumberOfArgumentsMessage(name));
 							}
 							return function(args);
 						}
@@ -745,10 +751,14 @@ class ComputerBuilder
 						}
 					}
 					
+					static string wrongNumberOfArgumentsMessage(const string& functionName)
+					{
+						return string()+"Wrong number of arguments for function '"+functionName+"'";
+					}
 					static int stringToInt(const string& str)
 					{
 						int intValue=0;
-						if(!stringToIntSimple(str,intValue)) throw errorString(__LINE__);
+						if(!stringToIntSimple(str,intValue)) throw errorString(string()+"Could not convert the string '"+str+"' to integer");
 						return intValue;
 					}
 					static string intToString(int intValue)
@@ -759,15 +769,73 @@ class ComputerBuilder
 					{
 						if(divisor==0 || dividend==int(uint32_t(1)<<31) && divisor==-1)
 						{
-							throw errorString(__LINE__);
+							throw errorString(string()+"Division/modulo operation of invalid integers: "+std::to_string(dividend)+" and "+std::to_string(divisor));
 						}
+					}
+					static bool multiplicationOverflows(int a,int b)
+					{
+						uint64_t absA=std::abs(int64_t(a));
+						uint64_t absB=std::abs(int64_t(b));
+						
+						uint64_t absC=absA*absB;
+						
+						if((a<0)!=(b<0) && absC==(uint64_t(1)<<31)) return false;
+						if(absC>=(uint64_t(1)<<31)) return true;
+						return false;
+					}
+					static bool additionOverflows_positiveAddition_bothPositive(uint64_t absA,uint64_t absB)
+					{
+						uint64_t c=absA+absB;
+						return c>=(uint64_t(1)<<31);
+					}
+					static bool additionOverflows_positiveAddition_bothNegative(uint64_t absA,uint64_t absB)
+					{
+						uint64_t c=absA+absB;
+						return c>(uint64_t(1)<<31);
+					}
+					static bool additionOverflows_positiveAddition_aPositive_bNegative(uint64_t absA,uint64_t absB)
+					{
+						uint64_t c=absA-absB;
+						if(c<(uint64_t(1)<<31)) return false;
+						if(-c<=(uint64_t(1)<<31)) return false;
+						return true;
+					}
+					static bool additionSubtractionOverflows(int a,int b,bool isSubtraction)
+					{
+						bool posA= a>=0;
+						bool posB= b>=0;
+						
+						if(isSubtraction) posB=!posB;
+						
+						uint64_t absA=std::abs(int64_t(a));
+						uint64_t absB=std::abs(int64_t(b));
+						
+						if(posA && posB) return additionOverflows_positiveAddition_bothPositive(absA,absB);
+						if(!posA && !posB) return additionOverflows_positiveAddition_bothNegative(absA,absB);
+						if(posA && !posB) return additionOverflows_positiveAddition_aPositive_bNegative(absA,absB);
+						if(!posA && posB) return additionOverflows_positiveAddition_aPositive_bNegative(absB,absA);
+						
+						return false;
+					}
+					static bool additionOverflows(int a,int b)
+					{
+						return additionSubtractionOverflows(a,b,false);
+					}
+					static bool subtractionOverflows(int a,int b)
+					{
+						return additionSubtractionOverflows(a,b,true);
 					}
 					
 					vector<Function> unaryOperators=vector<Function>
 					{
 						Function("-",[this](const vector<string>& args)->string
 						{
-							return intToString(-stringToInt(args[0]));
+							int a=stringToInt(args[0]);
+							
+							if(uint32_t(a)==(uint32_t(1)<<31)) throw errorString(string()+"sign change out of range: "+"-"+std::to_string(a));
+							int r=-a;
+							
+							return intToString(r);
 						}),
 						Function("~",[this](const vector<string>& args)->string
 						{
@@ -787,14 +855,16 @@ class ComputerBuilder
 							int b=stringToInt(args[1]);
 							
 							int r=0;
-							if(a==0 && b==0) throw errorString(__LINE__);
+							if(a==0 && b<=0) throw errorString(string()+"0 to the power of "+std::to_string(b));
 							
-							if(a!=0 && b>=0)
+							if(a==1) r=1;
+							else if(a==-1) r=(1-int(uint32_t(b)&1)*2);
+							else if(a!=0 && b>=0)
 							{
 								r=1;
 								for(int i=0;i<b;i++)
 								{
-									if(r*a/a!=r) throw errorString(__LINE__);
+									if(multiplicationOverflows(r,a)) throw errorString(string()+"Exponentiation result out of range: "+std::to_string(a)+"**"+std::to_string(b));
 									r*=a;
 								}
 							}
@@ -803,7 +873,13 @@ class ComputerBuilder
 						}),
 						Function("*",[this](const vector<string>& args)->string
 						{
-							return intToString(stringToInt(args[0])*stringToInt(args[1]));
+							int a=stringToInt(args[0]);
+							int b=stringToInt(args[1]);
+							
+							if(multiplicationOverflows(a,b)) throw errorString(string()+"Multiplication result out of range: "+std::to_string(a)+"*"+std::to_string(b));
+							int r=a*b;
+							
+							return intToString(r);
 						}),
 						Function("/",[this](const vector<string>& args)->string
 						{
@@ -821,33 +897,45 @@ class ComputerBuilder
 						}),
 						Function("+",[this](const vector<string>& args)->string
 						{
-							return intToString(stringToInt(args[0])+stringToInt(args[1]));
+							int a=stringToInt(args[0]);
+							int b=stringToInt(args[1]);
+							
+							if(additionOverflows(a,b)) throw errorString(string()+"Addition overflow: "+std::to_string(a)+"+"+std::to_string(b));
+							int r=a+b;
+							
+							return intToString(r);
 						}),
 						Function("-",[this](const vector<string>& args)->string
 						{
-							return intToString(stringToInt(args[0])-stringToInt(args[1]));
+							int a=stringToInt(args[0]);
+							int b=stringToInt(args[1]);
+							
+							if(subtractionOverflows(a,b)) throw errorString(string()+"Subtraction overflow: "+std::to_string(a)+"-"+std::to_string(b));
+							int r=a-b;
+							
+							return intToString(r);
 						}),
 						Function("<<",[this](const vector<string>& args)->string
 						{
 							int a=stringToInt(args[0]);
 							int b=stringToInt(args[1]);
-							if(b<0) throw errorString(__LINE__);
-							int c= b<32 ? (a<<b) : 0;
+							if(b<0) throw errorString(string()+"Negative bit shift: "+std::to_string(a)+"<<"+std::to_string(b));
+							int c= b<32 ? (a>>b) : 0;
 							return intToString(c);
 						}),
 						Function(">>",[this](const vector<string>& args)->string
 						{
 							int a=stringToInt(args[0]);
 							int b=stringToInt(args[1]);
-							if(b<0) throw errorString(__LINE__);
-							int c= b<32 ? (a>>b) : 0;
+							if(b<0) throw errorString(string()+"Negative bit shift: "+std::to_string(a)+">>"+std::to_string(b));
+							int c= b<32 ? (a>>b) : (a<0 ? -1 : 0);
 							return intToString(c);
 						}),
 						Function(">>>",[this](const vector<string>& args)->string
 						{
 							int a=stringToInt(args[0]);
 							int b=stringToInt(args[1]);
-							if(b<0) throw errorString(__LINE__);
+							if(b<0) throw errorString(string()+"Negative bit shift: "+std::to_string(a)+">>>"+std::to_string(b));
 							int c= b<32 ? int(uint32_t(a)>>b) : 0;
 							return intToString(c);
 						}),
@@ -877,15 +965,15 @@ class ComputerBuilder
 						}),
 						Function("&",[this](const vector<string>& args)->string
 						{
-							return intToString(stringToInt(args[0])&stringToInt(args[1]));
+							return intToString(uint32_t(stringToInt(args[0]))&uint32_t(stringToInt(args[1])));
 						}),
 						Function("^",[this](const vector<string>& args)->string
 						{
-							return intToString(stringToInt(args[0])^stringToInt(args[1]));
+							return intToString(uint32_t(stringToInt(args[0]))^uint32_t(stringToInt(args[1])));
 						}),
 						Function("|",[this](const vector<string>& args)->string
 						{
-							return intToString(stringToInt(args[0])|stringToInt(args[1]));
+							return intToString(uint32_t(stringToInt(args[0]))|uint32_t(stringToInt(args[1])));
 						}),
 						Function("&&",[this](const vector<string>& args)->string
 						{
@@ -913,49 +1001,41 @@ class ComputerBuilder
 					
 					Function ternaryOperator=Function("?",[this](const vector<string>& args)->string
 					{
-						return intToString(stringToInt(args[0])?stringToInt(args[1]):stringToInt(args[2]));
+						return stringToInt(args[0])?args[1]:args[2];
 					});
 					
 					vector<Function> functions=vector<Function>{
 						Function("isp2",[this](const vector<string>& args)->string
 						{
-							if(args.size()!=1) throw errorString(__LINE__);
-							
 							int a=stringToInt(args[0]);
 							int r=a>0 && std::has_single_bit(uint32_t(a));
 							
 							return intToString(r);
-						}),
+						},1),
 						Function("log2",[this](const vector<string>& args)->string
 						{
-							if(args.size()!=1) throw errorString(__LINE__);
-							
 							int a=stringToInt(args[0]);
-							if(a<=0) throw errorString(__LINE__);
+							if(a<=0) throw errorString(string()+"Logarithm of zero or negative number: "+std::to_string(a));
 							int r=int(std::countr_zero(std::bit_floor(uint32_t(a))));
 							
 							return intToString(r);
-						}),
+						},1),
 						Function("p2floor",[this](const vector<string>& args)->string
 						{
-							if(args.size()!=1) throw errorString(__LINE__);
-							
 							int a=stringToInt(args[0]);
-							if(a<=0) throw errorString(__LINE__);
+							if(a<=0) throw errorString(string()+"invalid zero or negative number for function: "+std::to_string(a));
 							int r=int(std::bit_floor(uint32_t(a)));
 							
 							return intToString(r);
-						}),
+						},1),
 						Function("p2ceil",[this](const vector<string>& args)->string
 						{
-							if(args.size()!=1) throw errorString(__LINE__);
-							
 							int a=stringToInt(args[0]);
-							if(a<=0 || a>(1<<30)) throw errorString(__LINE__);
+							if(a<=0 || a>(1<<30)) throw errorString(string()+"invalid out of range number for function: "+std::to_string(a));
 							int r=int(std::bit_ceil(uint32_t(a)));
 							
 							return intToString(r);
-						})
+						},1)
 					};
 				public:
 				
@@ -1077,9 +1157,22 @@ class ComputerBuilder
 						else throw errorString(__LINE__);
 					}
 					
+					string expectedContinuationMessage(int errorCode)
+					{
+						return "Expected continuation of expression";
+					}
+					string expectedTokenMessage(const string& expectedToken,const string& actualToken,int errorCode)
+					{
+						return string()+"Expected '"+expectedToken+"' instead of '"+actualToken+"'";
+					}
+					string unexpectedTokenMessage(const string& token,int errorCode)
+					{
+						return string()+"Unexpected symbol '"+token+"'";
+					}
+					
 					string evaluateExpressionPart(const Code& code,size_t& t,const vector<TemplateArgument>& templateArguments,int level)
 					{
-						if(t>=code.tokens.size()) throw errorString(__LINE__);
+						if(t>=code.tokens.size()) throw errorString(expectedContinuationMessage(__LINE__));
 						
 						string token=code.tokens[t];
 						
@@ -1088,10 +1181,10 @@ class ComputerBuilder
 						if(token=="(")
 						{
 							t++;
-							if(t>=code.tokens.size()) throw errorString(__LINE__);
+							if(t>=code.tokens.size()) throw errorString(expectedContinuationMessage(__LINE__));
 							lvalue=evaluateExpressionPart(code,t,templateArguments,0);
-							if(t>=code.tokens.size()) throw errorString(__LINE__);
-							if(code.tokens[t]!=")") throw errorString(__LINE__);
+							if(t>=code.tokens.size()) throw errorString(expectedContinuationMessage(__LINE__));
+							if(code.tokens[t]!=")") throw errorString(expectedTokenMessage(")",code.tokens[t],__LINE__));
 							t++;
 						}
 						else if(Code::isIdentifierToken(token))
@@ -1099,10 +1192,10 @@ class ComputerBuilder
 							string functionName;
 							if(parseFunctionName(code,t,functionName))
 							{
-								if(t>=code.tokens.size()) throw errorString(__LINE__);
-								if(code.tokens[t]!="(") throw errorString(__LINE__);
+								if(t>=code.tokens.size()) throw errorString(expectedContinuationMessage(__LINE__));
+								if(code.tokens[t]!="(") throw errorString(expectedTokenMessage("(",code.tokens[t],__LINE__));
 								t++;
-								if(t>=code.tokens.size()) throw errorString(__LINE__);
+								if(t>=code.tokens.size()) throw errorString(expectedContinuationMessage(__LINE__));
 								
 								vector<string> functionArguments;
 								
@@ -1112,19 +1205,19 @@ class ComputerBuilder
 									
 									functionArguments.push_back(evaluateExpressionPart(code,t,templateArguments,0));
 									
-									if(t>=code.tokens.size()) throw errorString(__LINE__);
+									if(t>=code.tokens.size()) throw errorString(expectedContinuationMessage(__LINE__));
 									if(code.tokens[t]==",")
 									{
 										t++;
-										if(t>=code.tokens.size()) throw errorString(__LINE__);
+										if(t>=code.tokens.size()) throw errorString(expectedContinuationMessage(__LINE__));
 									}
-									else if(code.tokens[t]!=")") throw errorString(__LINE__);
+									else if(code.tokens[t]!=")") throw errorString(expectedTokenMessage(")",code.tokens[t],__LINE__));
 								}
 								
 								lvalue=executeFunction(functionName,functionArguments);
 								
-								if(t>=code.tokens.size()) throw errorString(__LINE__);
-								if(code.tokens[t]!=")") throw errorString(__LINE__);
+								if(t>=code.tokens.size()) throw errorString(expectedContinuationMessage(__LINE__));
+								if(code.tokens[t]!=")") throw errorString(expectedTokenMessage(")",code.tokens[t],__LINE__));
 								t++;
 							}
 							else
@@ -1143,10 +1236,10 @@ class ComputerBuilder
 							string op;
 							if(parseUnaryOperator(code,t,op))
 							{
-								if(t>=code.tokens.size()) throw errorString(__LINE__);
+								if(t>=code.tokens.size()) throw errorString(expectedContinuationMessage(__LINE__));
 								lvalue=executeUnaryOperator(op,evaluateExpressionPart(code,t,templateArguments,getMaximumBinaryOperatorLevel()));
 							}
-							else throw errorString(__LINE__);
+							else throw errorString(unexpectedTokenMessage(code.tokens[t],__LINE__));
 						}
 						
 						for(;;)
@@ -1160,14 +1253,14 @@ class ComputerBuilder
 								if(level>0) break;
 								
 								t++;
-								if(t>=code.tokens.size()) throw errorString(__LINE__);
+								if(t>=code.tokens.size()) throw errorString(expectedContinuationMessage(__LINE__));
 								
 								string valueA=evaluateExpressionPart(code,t,templateArguments,0);
 								
-								if(t>=code.tokens.size()) throw errorString(__LINE__);
-								if(code.tokens[t]!=":") throw errorString(__LINE__);
+								if(t>=code.tokens.size()) throw errorString(expectedContinuationMessage(__LINE__));
+								if(code.tokens[t]!=":") throw errorString(expectedTokenMessage(":",code.tokens[t],__LINE__));
 								t++;
-								if(t>=code.tokens.size()) throw errorString(__LINE__);
+								if(t>=code.tokens.size()) throw errorString(expectedContinuationMessage(__LINE__));
 								
 								string valueB=evaluateExpressionPart(code,t,templateArguments,0);
 								
@@ -1192,7 +1285,7 @@ class ComputerBuilder
 									break;
 								}
 							}
-							else throw errorString(__LINE__);
+							else throw errorString(unexpectedTokenMessage(code.tokens[t],__LINE__));
 						}
 						
 						return lvalue;
@@ -1216,9 +1309,21 @@ class ComputerBuilder
 				}
 				catch(const string& str)
 				{
-					int originalLineIndex=resolveLineIndex(lineIndex);
-					throw string("Error in expression evaluation at line ")+std::to_string(originalLineIndex+1)+":\n"+str;
+					throw errorString(string("Error in expression evaluation: ")+str,lineIndex);
 				}
+			}
+			
+			string invalidSplittedTemplateLineMessage(int errorCode)
+			{
+				return "Template delimiters ('<' and '>') do not match";
+			}
+			string invalidIdentifierMessage(const string& identifier,int errorCode)
+			{
+				return string()+"Invalid name '"+identifier+"'";
+			}
+			string expectedContinuationOfLineMessage(int errorCode)
+			{
+				return "Expected continuation of line";
 			}
 			
 			void processTemplate(size_t& originalLineIndex)
@@ -1251,7 +1356,7 @@ class ComputerBuilder
 					
 					string startLine=templateLines[0];
 					vector<string> startLineSplitted=splitLineTemplates(startLine);
-					if(!checkSplittedTemplateLineValid(startLineSplitted)) throw errorString(__LINE__,lineIndex);
+					if(!checkSplittedTemplateLineValid(startLineSplitted)) throw errorString(invalidSplittedTemplateLineMessage(__LINE__),lineIndex);
 					for(int i=0;i<startLineSplitted.size();i++)
 					{
 						string str=startLineSplitted[i];
@@ -1260,24 +1365,24 @@ class ComputerBuilder
 							str=str.substr(1,str.size()-2);
 							
 							size_t equalSign=str.find_first_of("=");
-							if(equalSign==string::npos) throw errorString(__LINE__,lineIndex);
+							if(equalSign==string::npos) throw errorString("Expected '='",lineIndex);
 							
 							string name=str.substr(0,equalSign);
 							
-							if(!isValidIdentifier(name)) throw errorString(__LINE__,lineIndex);
+							if(!isValidIdentifier(name)) throw errorString(invalidIdentifierMessage(name,__LINE__),lineIndex);
 							
 							vector<string> valuesStr=splitStringAtCommas(str.substr(equalSign+1,str.size()-(equalSign+1)));
 							
 							vector<string> values;
 							
-							if(valuesStr.size()==0) throw errorString(__LINE__,lineIndex);
+							if(valuesStr.size()==0) throw errorString("The list of values is empty",lineIndex);
 							for(int j=0;j<valuesStr.size();j++)
 							{
 								string value=trimString(valuesStr[j]);
-								if(value.size()==0) throw errorString(__LINE__,lineIndex);
+								if(value.size()==0) throw errorString("Empty string values are not allowed",lineIndex);
 								for(int k=0;k<value.size();k++)
 								{
-									if(value[k]==' ') throw errorString(__LINE__,lineIndex);
+									if(value[k]==' ') throw errorString("Space in a value",lineIndex);
 								}
 								
 								string dotsString="...";
@@ -1290,10 +1395,10 @@ class ComputerBuilder
 									
 									int start=0;
 									int end=0;
-									if(!stringToIntSimple(startStr,start)) throw errorString(__LINE__,lineIndex);
-									if(!stringToIntSimple(endStr,end)) throw errorString(__LINE__,lineIndex);
+									if(!stringToIntSimple(startStr,start)) throw errorString("Not an integer for range start",lineIndex);
+									if(!stringToIntSimple(endStr,end)) throw errorString("Not an integer for range end",lineIndex);
 									
-									if(start>end) throw errorString(__LINE__,lineIndex);
+									if(start>end) throw errorString("Range end must be greater or equal to range start",lineIndex);
 									
 									for(int number=start;number<=end;number++)
 									{
@@ -1306,7 +1411,7 @@ class ComputerBuilder
 								}
 							}
 							
-							if(findWithName(templateParameters,name)!=-1) throw errorString(__LINE__,lineIndex);
+							if(findWithName(templateParameters,name)!=-1) throw errorString(string()+"Template argument '"+name+"' already defined",lineIndex);
 							
 							templateParameters.emplace_back(name,values);
 						}
@@ -1321,11 +1426,16 @@ class ComputerBuilder
 					{
 						size_t count=templateParameters[i].possibleValues.size();
 						
-						if(count>maximumNumberOfCombinations) throw errorString(__LINE__,lineIndex);
+						bool tooManyCombinations=false;
 						
+						if(count>maximumNumberOfCombinations) tooManyCombinations=true;
 						numberOfCombinations*=count;
+						if(numberOfCombinations>maximumNumberOfCombinations) tooManyCombinations=true;
 						
-						if(numberOfCombinations>maximumNumberOfCombinations) throw errorString(__LINE__,lineIndex);
+						if(tooManyCombinations)
+						{
+							throw errorString(string()+"Too many template argument value combinations: >"+std::to_string(maximumNumberOfCombinations),lineIndex);
+						}
 					}
 				}
 				
@@ -1362,7 +1472,7 @@ class ComputerBuilder
 						if(line.size()>0)
 						{
 							vector<string> lineSplitted=splitLineTemplates(line);
-							if(!checkSplittedTemplateLineValid(lineSplitted)) throw errorString(__LINE__,lineIndex);
+							if(!checkSplittedTemplateLineValid(lineSplitted)) throw errorString(invalidSplittedTemplateLineMessage(__LINE__),lineIndex);
 							
 							for(size_t i=0;i<lineSplitted.size();i++)
 							{
@@ -1371,7 +1481,7 @@ class ComputerBuilder
 								{
 									str=str.substr(1,str.size()-2);
 									
-									if(str.size()==0) throw errorString(__LINE__,lineIndex);
+									if(str.size()==0) throw errorString("Empty template expression",lineIndex);
 									
 									bool assertMode=false;
 									if(str[0]=='?')
@@ -1477,37 +1587,38 @@ class ComputerBuilder
 				if(colon==string::npos) throw errorString(__LINE__,lineIndex);
 				
 				string name=line.substr(0,colon);
-				if(!isValidIdentifier(name)) throw errorString(__LINE__,lineIndex);
+				if(!isValidIdentifier(name)) throw errorString(invalidIdentifierMessage(name,__LINE__),lineIndex);
 				
 				size_t position=colon+1;
-				if(position>=line.size()) throw errorString(__LINE__,lineIndex);
+				if(position>=line.size()) throw errorString(expectedContinuationOfLineMessage(__LINE__),lineIndex);
 				vector<string> splitted=splitStringAtSpaces(line.substr(position,line.size()-position));
 				
-				if(splitted.size()==0 || splitted.size()>2) throw errorString(__LINE__,lineIndex);
+				if(splitted.size()==0) throw errorString("Expected variable type",lineIndex);
+				if(splitted.size()>2) throw errorString("Too many parameters for variable",lineIndex);
 				string typeString=splitted[0];
 				int sizeInBits=1;
 				if(splitted.size()>1)
 				{
+					string str=splitted[1];
 					try
 					{
-						string str=splitted[1];
 						sizeInBits=std::stoi(str);
 						if(sizeInBits<=0 || sizeInBits>maximumVariableSizeInBits) throw 1;
 						if(std::to_string(sizeInBits)!=str) throw 1;
 					}
 					catch(...)
 					{
-						throw errorString(__LINE__,lineIndex);
+						throw errorString(string()+"Invalid variable size: "+str,lineIndex);
 					}
 				}
 				
-				if(findWithName(components.back().variables,name)!=-1) throw errorString(__LINE__,lineIndex);
+				if(findWithName(components.back().variables,name)!=-1) throw errorString("Variable name already in use",lineIndex);
 				
 				Component::Variable::Type type=Component::Variable::Type::input;
 				if(typeString=="in"){}
 				else if(typeString=="out") type=Component::Variable::Type::output;
 				else if(typeString=="reg") type=Component::Variable::Type::reg;
-				else throw errorString(__LINE__,lineIndex);
+				else throw errorString("Invalid variable type",lineIndex);
 				
 				components.back().variables.emplace_back(type,name,sizeInBits,lineIndex);
 				
@@ -1526,8 +1637,8 @@ class ComputerBuilder
 					if(line.back()==':')
 					{
 						string name=line.substr(0,line.size()-1);
-						if(!isValidIdentifier(name)) throw errorString(__LINE__,lineIndex);
-						if(findWithName(components,name)!=-1) throw errorString(__LINE__,lineIndex);
+						if(!isValidIdentifier(name)) throw errorString(invalidIdentifierMessage(name,__LINE__),lineIndex);
+						if(findWithName(components,name)!=-1) throw errorString(string()+"Component '"+name+"' already defined",lineIndex);
 						
 						
 						if(components.size()>0) components.back().lastLine=lineIndex-1;
@@ -1539,7 +1650,7 @@ class ComputerBuilder
 					}
 					else
 					{
-						if(components.size()==0) throw errorString(__LINE__,lineIndex);
+						if(components.size()==0) throw errorString("Expected component header",lineIndex);
 						
 						if(isVariableDeclarationLine(line))
 						{
@@ -1640,21 +1751,21 @@ class ComputerBuilder
 						if(!isVariableDeclarationLine(line))
 						{
 							size_t equalSign=line.find_first_of("=");
-							if(equalSign==string::npos) throw errorString(__LINE__,lineIndex);
+							if(equalSign==string::npos) throw errorString("Expected '='",lineIndex);
 							
 							vector<string> outputs=splitStringAtSpaces(line.substr(0,equalSign));
-							if(outputs.size()==0) throw errorString(__LINE__,lineIndex);
+							if(outputs.size()==0) throw errorString("Expected output variables",lineIndex);
 							
 							size_t position=equalSign+1;
-							if(position>=line.size()) throw errorString(__LINE__,lineIndex);
+							if(position>=line.size()) throw errorString(expectedContinuationOfLineMessage(__LINE__),lineIndex);
 							vector<string> inputs=splitStringAtSpaces(line.substr(position,line.size()-position));
 							
-							if(inputs.size()<=1) throw errorString(__LINE__,lineIndex);
+							if(inputs.size()<=1) throw errorString("Expected input variables",lineIndex);
 							
 							string componentName=inputs[0];
 							inputs.erase(inputs.begin());
 							
-							if(!isValidIdentifier(componentName)) throw errorString(__LINE__,lineIndex);
+							if(!isValidIdentifier(componentName)) throw errorString("Invalid component name '"+componentName+"'",lineIndex);
 							
 							
 							Component::Element::Type elementType=Component::Element::Type::nand;
@@ -1710,29 +1821,37 @@ class ComputerBuilder
 								}
 							}
 							
-							if(inputs.size()!=inputSizes.size()) throw errorString(__LINE__,lineIndex);
-							if(outputs.size()!=outputSizes.size()) throw errorString(__LINE__,lineIndex);
+							if(inputs.size()!=inputSizes.size()) throw errorString("Input count does not match",lineIndex);
+							if(outputs.size()!=outputSizes.size()) throw errorString("Output count does not match",lineIndex);
 							
 							vector<int> outputVariableIndexes;
 							
 							for(int i=0;i<outputs.size();i++)
 							{
 								string name=outputs[i];
-								if(!isValidIdentifier(name)) throw errorString(__LINE__,lineIndex);
+								if(!isValidIdentifier(name)) throw errorString(invalidIdentifierMessage(name,__LINE__),lineIndex);
 								
 								if(name=="_")
 								{
 									name+=std::to_string(nextOutputToDiscardIndex);
 									nextOutputToDiscardIndex++;
 								}
+								else if(name.size()>=2 && name[0]=='_' && name[1]>='0' && name[1]<='9')
+								{
+									throw errorString(invalidIdentifierMessage(name,__LINE__),lineIndex);
+								}
 								
 								int variableIndex=findWithName(component.variables,name);
 								if(variableIndex!=-1)
 								{
 									Component::Variable::Type variableType=component.variables[variableIndex].type;
-									if(variableType!=Component::Variable::Type::output && variableType!=Component::Variable::Type::reg)
+									if(variableType==Component::Variable::Type::intermediate)
 									{
-										throw errorString(__LINE__,lineIndex);
+										throw errorString(string()+"Variable '"+name+"' already used as output",lineIndex);
+									}
+									else if(variableType!=Component::Variable::Type::output && variableType!=Component::Variable::Type::reg)
+									{
+										throw errorString(string()+"Invalid variable type for use as output: '"+name+"'",lineIndex);
 									}
 									
 									outputVariableIndexes.push_back(variableIndex);
@@ -1747,11 +1866,12 @@ class ComputerBuilder
 							
 							for(int i=0;i<outputVariableIndexes.size();i++)
 							{
+								int index=outputVariableIndexes[i];
 								for(int j=i+1;j<outputVariableIndexes.size();j++)
 								{
-									if(outputVariableIndexes[i]==outputVariableIndexes[j])
+									if(index==outputVariableIndexes[j])
 									{
-										throw errorString(__LINE__,lineIndex);
+										throw errorString(string()+"Repeated output variable '"+component.variables[index].name+"'",lineIndex);
 									}
 								}
 							}
@@ -1792,7 +1912,7 @@ class ComputerBuilder
 									}
 									catch(...)
 									{
-										throw errorString(__LINE__,lineIndex);
+										throw errorString(string()+"Invalid integer constant '"+str+"'",lineIndex);
 									}
 									
 									int inputSize=assignmentLine.inputSizes[i];
@@ -1804,7 +1924,7 @@ class ComputerBuilder
 										
 										if(constant<minimumSignedNegative || constant>maximumUnsignedPositive)
 										{
-											throw errorString(__LINE__,lineIndex);
+											throw errorString(string()+"Integer constant '"+str+"' out of range for this input of component",lineIndex);
 										}
 									}
 									
@@ -1824,50 +1944,59 @@ class ComputerBuilder
 							{
 								name=str.substr(0,bracket);
 								
-								if(str.back()!=']') throw errorString(__LINE__,lineIndex);
+								if(str.back()!=']') throw errorString("Expected ']'",lineIndex);
 								
 								string bracketContent=str.substr(bracket+1,(str.size()-1)-(bracket+1));
 								
 								vector<string> numbers=splitStringAtColons(bracketContent);
 								
-								if(numbers.size()==0) throw errorString(__LINE__,lineIndex);
+								if(numbers.size()==0) throw errorString("Expected bit index or range inside '[]'",lineIndex);
 								
-								if(numbers[0].size()==0) throw errorString(__LINE__,lineIndex);
-								if(!stringToIntSimple(numbers[0],offset)) throw errorString(__LINE__,lineIndex);
-								if(offset<0) throw errorString(__LINE__,lineIndex);
+								if(numbers[0].size()==0) throw errorString("Empty bit index",lineIndex);
+								if(!stringToIntSimple(numbers[0],offset)) throw errorString(string()+"Invalid bit index '"+numbers[0]+"'",lineIndex);
+								if(offset<0) throw errorString(string()+"Negative bit index: "+numbers[0],lineIndex);
 								
 								size=1;
 								if(numbers.size()>1)
 								{
 									int offsetB=0;
-									if(numbers[1].size()==0) throw errorString(__LINE__,lineIndex);
-									if(!stringToIntSimple(numbers[1],offsetB)) throw errorString(__LINE__,lineIndex);
+									if(numbers[1].size()==0) throw errorString("Empty bit range end",lineIndex);
+									if(!stringToIntSimple(numbers[1],offsetB)) throw errorString(string()+"Invalid bit range end '"+numbers[1]+"'",lineIndex);
 									
 									size=offsetB-offset;
 									
-									if(size<=0) throw errorString(__LINE__,lineIndex);
+									if(size<=0) throw errorString(string()+"Invalid bit range: ["+numbers[0]+":"+numbers[1]+"]",lineIndex);
 								}
 								
-								if(numbers.size()>2) throw errorString(__LINE__,lineIndex);
+								if(numbers.size()>2) throw errorString("Too many arguments for bit range",lineIndex);
 							}
 							
-							if(!isValidIdentifier(name)) throw errorString(__LINE__,lineIndex);
+							if(!isValidIdentifier(name)) throw errorString(string()+"Input variable name not valid: '"+name+"'",lineIndex);
 							
 							int variableIndex=findWithName(component.variables,name);
-							if(variableIndex==-1) throw errorString(__LINE__,lineIndex);
+							if(variableIndex==-1) throw errorString(string()+"Input variable not declared: '"+name+"'",lineIndex);
 							
 							int variableSize=component.variables[variableIndex].sizeInBits;
 							if(size==-1) size=variableSize;
 							
 							
-							if(offset+size>variableSize) throw errorString(__LINE__,lineIndex);
+							if(offset+size>variableSize)
+							{
+								throw errorString(string()+"Bit range out of range of variable: "
+									+name+"["+std::to_string(offset)+":"+std::to_string(offset+size)+"]",lineIndex);
+							}
 							
-							if(size!=assignmentLine.inputSizes[i]) throw errorString(__LINE__,lineIndex);
+							if(size!=assignmentLine.inputSizes[i])
+							{
+								throw errorString(string()+"Input argument size does not match the component parameter size: "
+									+name+"["+std::to_string(offset)+":"+std::to_string(offset+size)+"]"
+									+" -> "+std::to_string(size)+"!="+std::to_string(assignmentLine.inputSizes[i]),lineIndex);
+							}
 							
 							
 							if(component.variables[variableIndex].type==Component::Variable::Type::output)
 							{
-								throw errorString(__LINE__,lineIndex);
+								throw errorString(string()+"Invalid use of output variable as input: '"+name+"'",lineIndex);
 							}
 							
 							
@@ -1883,7 +2012,8 @@ class ComputerBuilder
 								{
 									if(elementOutputs[j].variableIndex==element.outputs[i].variableIndex)
 									{
-										throw errorString(__LINE__,lineIndex);
+										string variableName=component.variables[elementOutputs[j].variableIndex].name;
+										throw errorString(string()+"Variable used more than once as output: '"+variableName+"'",lineIndex);
 									}
 								}
 							}
@@ -1922,7 +2052,7 @@ class ComputerBuilder
 								if(found) break;
 							}
 							
-							if(!found) throw errorString(__LINE__,variable.lineIndex);
+							if(!found) throw errorString(string()+"Variable '"+variable.name+"' without assignment set (undefined value)",variable.lineIndex);
 						}
 					}
 				}
@@ -1989,7 +2119,7 @@ class ComputerBuilder
 						}
 					}
 					
-					throw string("Error: Cannot compile certain components due to infinite recursivity: ")+str;
+					throw string()+"Error: Cannot compile certain components due to infinite recursivity: "+str;
 				}
 			}
 			
