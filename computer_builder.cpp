@@ -160,6 +160,357 @@ class ComputerBuilder
 	
 	class Code
 	{
+		private:
+			class SafeInteger
+			{
+				private:
+					int internal_value=0;
+					
+					static void assertDivision(int dividend,int divisor,bool isModulo)
+					{
+						if(divisor==0 || dividend==int(uint32_t(1)<<31) && divisor==-1)
+						{
+							string operationString= isModulo ? "modulo" : "division";
+							throw string()+operationString+" operation of invalid integers: "+std::to_string(dividend)+" and "+std::to_string(divisor);
+						}
+					}
+					static bool multiplicationOverflows(int a,int b)
+					{
+						uint64_t absA=std::abs(int64_t(a));
+						uint64_t absB=std::abs(int64_t(b));
+						
+						uint64_t absC=absA*absB;
+						
+						if((a<0)!=(b<0) && absC==(uint64_t(1)<<31)) return false;
+						if(absC>=(uint64_t(1)<<31)) return true;
+						return false;
+					}
+					static bool additionOverflows_positiveAddition_bothPositive(uint64_t absA,uint64_t absB)
+					{
+						uint64_t c=absA+absB;
+						return c>=(uint64_t(1)<<31);
+					}
+					static bool additionOverflows_positiveAddition_bothNegative(uint64_t absA,uint64_t absB)
+					{
+						uint64_t c=absA+absB;
+						return c>(uint64_t(1)<<31);
+					}
+					static bool additionOverflows_positiveAddition_aPositive_bNegative(uint64_t absA,uint64_t absB)
+					{
+						uint64_t c=absA-absB;
+						if(c<(uint64_t(1)<<31)) return false;
+						if(-c<=(uint64_t(1)<<31)) return false;
+						return true;
+					}
+					static bool additionSubtractionOverflows(int a,int b,bool isSubtraction)
+					{
+						bool posA= a>=0;
+						bool posB= b>=0;
+						
+						if(isSubtraction) posB=!posB;
+						
+						uint64_t absA=std::abs(int64_t(a));
+						uint64_t absB=std::abs(int64_t(b));
+						
+						if(posA && posB) return additionOverflows_positiveAddition_bothPositive(absA,absB);
+						if(!posA && !posB) return additionOverflows_positiveAddition_bothNegative(absA,absB);
+						if(posA && !posB) return additionOverflows_positiveAddition_aPositive_bNegative(absA,absB);
+						if(!posA && posB) return additionOverflows_positiveAddition_aPositive_bNegative(absB,absA);
+						
+						return false;
+					}
+					static bool additionOverflows(int a,int b)
+					{
+						return additionSubtractionOverflows(a,b,false);
+					}
+					static bool subtractionOverflows(int a,int b)
+					{
+						return additionSubtractionOverflows(a,b,true);
+					}
+				public:
+				
+				explicit SafeInteger(int value)
+				{
+					internal_value=value;
+				}
+				int getValue() const
+				{
+					return internal_value;
+				}
+				
+				SafeInteger operator -() const
+				{
+					int a=internal_value;
+					
+					if(uint32_t(a)==(uint32_t(1)<<31)) throw string()+"sign change out of range: "+std::to_string(a);
+					int r=-a;
+					
+					return SafeInteger(r);
+				}
+				SafeInteger operator ~() const
+				{
+					int a=internal_value;
+					return SafeInteger(~a);
+				}
+				SafeInteger operator !() const
+				{
+					int a=internal_value;
+					return SafeInteger(!a);
+				}
+				
+				SafeInteger pow(const SafeInteger& integerB) const
+				{
+					int a=internal_value;
+					int b=integerB.internal_value;
+					
+					int r=0;
+					if(a==0 && b<=0) throw string()+"0 to the power of "+std::to_string(b);
+					
+					if(a==1) r=1;
+					else if(a==-1) r=(1-int(uint32_t(b)&1)*2);
+					else if(a!=0 && b>=0)
+					{
+						r=1;
+						for(int i=0;i<b;i++)
+						{
+							if(multiplicationOverflows(r,a)) throw string()+"exponentiation result out of range: "+std::to_string(a)+" and "+std::to_string(b);
+							r*=a;
+						}
+					}
+					
+					return SafeInteger(r);
+				}
+				SafeInteger operator *(const SafeInteger& integerB) const
+				{
+					int a=internal_value;
+					int b=integerB.internal_value;
+					
+					if(multiplicationOverflows(a,b)) throw string()+"multiplication result out of range: "+std::to_string(a)+" and "+std::to_string(b);
+					int r=a*b;
+					
+					return SafeInteger(r);
+				}
+				SafeInteger operator /(const SafeInteger& integerB) const
+				{
+					int a=internal_value;
+					int b=integerB.internal_value;
+					
+					assertDivision(a,b,false);
+					int r=a/b;
+					
+					return SafeInteger(r);
+				}
+				SafeInteger operator %(const SafeInteger& integerB) const
+				{
+					int a=internal_value;
+					int b=integerB.internal_value;
+					
+					assertDivision(a,b,true);
+					int r=a%b;
+					
+					return SafeInteger(r);
+				}
+				SafeInteger operator +(const SafeInteger& integerB) const
+				{
+					int a=internal_value;
+					int b=integerB.internal_value;
+					
+					if(additionOverflows(a,b)) throw string()+"addition overflow: "+std::to_string(a)+" and "+std::to_string(b);
+					int r=a+b;
+					
+					return SafeInteger(r);
+				}
+				SafeInteger operator -(const SafeInteger& integerB) const
+				{
+					int a=internal_value;
+					int b=integerB.internal_value;
+					
+					if(subtractionOverflows(a,b)) throw string()+"subtraction overflow: "+std::to_string(a)+" and "+std::to_string(b);
+					int r=a-b;
+					
+					return SafeInteger(r);
+				}
+				SafeInteger operator <<(const SafeInteger& integerB) const
+				{
+					int a=internal_value;
+					int b=integerB.internal_value;
+					
+					if(b<0) throw string()+"negative bit shift: "+std::to_string(a)+" and "+std::to_string(b);
+					int r= b<32 ? (a>>b) : 0;
+					
+					return SafeInteger(r);
+				}
+				SafeInteger operator >>(const SafeInteger& integerB) const
+				{
+					int a=internal_value;
+					int b=integerB.internal_value;
+					
+					if(b<0) throw string()+"negative bit shift: "+std::to_string(a)+" and "+std::to_string(b);
+					int r= b<32 ? (a>>b) : (a<0 ? -1 : 0);
+					
+					return SafeInteger(r);
+				}
+				SafeInteger shiftRightLogical(const SafeInteger& integerB) const
+				{
+					int a=internal_value;
+					int b=integerB.internal_value;
+					
+					if(b<0) throw string()+"negative bit shift: "+std::to_string(a)+" and "+std::to_string(b);
+					int r= b<32 ? int(uint32_t(a)>>b) : 0;
+					
+					return SafeInteger(r);
+				}
+				SafeInteger operator <(const SafeInteger& integerB) const
+				{
+					int a=internal_value;
+					int b=integerB.internal_value;
+					
+					int r= a<b;
+					
+					return SafeInteger(r);
+				}
+				SafeInteger operator <=(const SafeInteger& integerB) const
+				{
+					int a=internal_value;
+					int b=integerB.internal_value;
+					
+					int r= a<=b;
+					
+					return SafeInteger(r);
+				}
+				SafeInteger operator >(const SafeInteger& integerB) const
+				{
+					int a=internal_value;
+					int b=integerB.internal_value;
+					
+					int r= a>b;
+					
+					return SafeInteger(r);
+				}
+				SafeInteger operator >=(const SafeInteger& integerB) const
+				{
+					int a=internal_value;
+					int b=integerB.internal_value;
+					
+					int r= a>=b;
+					
+					return SafeInteger(r);
+				}
+				SafeInteger operator ==(const SafeInteger& integerB) const
+				{
+					int a=internal_value;
+					int b=integerB.internal_value;
+					
+					int r= a==b;
+					
+					return SafeInteger(r);
+				}
+				SafeInteger operator !=(const SafeInteger& integerB) const
+				{
+					int a=internal_value;
+					int b=integerB.internal_value;
+					
+					int r= a!=b;
+					
+					return SafeInteger(r);
+				}
+				SafeInteger operator &(const SafeInteger& integerB) const
+				{
+					int a=internal_value;
+					int b=integerB.internal_value;
+					
+					int r=uint32_t(a)&uint32_t(b);
+					
+					return SafeInteger(r);
+				}
+				SafeInteger operator ^(const SafeInteger& integerB) const
+				{
+					int a=internal_value;
+					int b=integerB.internal_value;
+					
+					int r=uint32_t(a)^uint32_t(b);
+					
+					return SafeInteger(r);
+				}
+				SafeInteger operator |(const SafeInteger& integerB) const
+				{
+					int a=internal_value;
+					int b=integerB.internal_value;
+					
+					int r=uint32_t(a)|uint32_t(b);
+					
+					return SafeInteger(r);
+				}
+				SafeInteger operator &&(const SafeInteger& integerB) const
+				{
+					int a=internal_value;
+					int b=integerB.internal_value;
+					
+					int r= a && b;
+					
+					return SafeInteger(r);
+				}
+				SafeInteger operator ||(const SafeInteger& integerB) const
+				{
+					int a=internal_value;
+					int b=integerB.internal_value;
+					
+					int r= a || b;
+					
+					return SafeInteger(r);
+				}
+				
+				SafeInteger& operator *=(const SafeInteger& b)
+				{
+					*this=*this*b;
+					return *this;
+				}
+				SafeInteger& operator /=(const SafeInteger& b)
+				{
+					*this=*this/b;
+					return *this;
+				}
+				SafeInteger& operator %=(const SafeInteger& b)
+				{
+					*this=*this%b;
+					return *this;
+				}
+				SafeInteger& operator +=(const SafeInteger& b)
+				{
+					*this=*this+b;
+					return *this;
+				}
+				SafeInteger& operator -=(const SafeInteger& b)
+				{
+					*this=*this-b;
+					return *this;
+				}
+				SafeInteger& operator <<=(const SafeInteger& b)
+				{
+					*this=(*this<<b);
+					return *this;
+				}
+				SafeInteger& operator >>=(const SafeInteger& b)
+				{
+					*this=(*this>>b);
+					return *this;
+				}
+				SafeInteger& operator &=(const SafeInteger& b)
+				{
+					*this=(*this&b);
+					return *this;
+				}
+				SafeInteger& operator ^=(const SafeInteger& b)
+				{
+					*this=(*this^b);
+					return *this;
+				}
+				SafeInteger& operator |=(const SafeInteger& b)
+				{
+					*this=(*this|b);
+					return *this;
+				}
+			};
 		public:
 		
 		static constexpr int maximumVariableSizeInBits=(1<<30);
@@ -608,9 +959,25 @@ class ComputerBuilder
 				}
 			};
 			
-			class TemplateExpressionEvaluator
+			template <class ValueT>
+			class ExpressionEvaluator
 			{
 				public:
+				
+				class Variable
+				{
+					public:
+					
+					string name;
+					ValueT value;
+					
+					Variable(){}
+					Variable(const string& _name,const ValueT& _value)
+					{
+						name=_name;
+						value=_value;
+					}
+				};
 				
 				private:
 					class Code
@@ -690,59 +1057,56 @@ class ComputerBuilder
 						}
 					};
 					
-					static string errorString(int errorCode)
+					ValueT getVariableWithName(const string& name,const vector<Variable>& variables)
 					{
-						return string("ERROR_")+std::to_string(errorCode);
+						int variableIndex=findWithName(variables,name);
+						if(variableIndex==-1) throw string()+"variable named '"+name+"' not found";
+						
+						return variables[variableIndex].value;
 					}
-					static string errorString(const string& errorMessage)
+				public:
+				
+				class Function
+				{
+					public:
+					
+					bool defined=false;
+					
+					string name;
+					vector<string> nameTokens;
+					
+					std::function<string(const vector<string>&)> function;
+					
+					int numberOfArguments=-1;
+					
+					Function(){}
+					Function(const string& _name,const std::function<string(const vector<string>&)>& _function,int _numberOfArguments=-1)
 					{
-						return errorMessage;
+						defined=true;
+						
+						name=_name;
+						nameTokens=Code::tokenize(name);
+						
+						function=_function;
+						
+						numberOfArguments=_numberOfArguments;
 					}
 					
-					string getTemplateArgumentWithName(const string& name,const vector<TemplateArgument>& templateArguments)
+					void setFixedNumberOfArguments(int _numberOfArguments)
 					{
-						int argumentIndex=findWithName(templateArguments,name);
-						if(argumentIndex==-1) throw errorString(string()+"Variable named '"+name+"' not found");
-						
-						return templateArguments[argumentIndex].value;
+						numberOfArguments=_numberOfArguments;
 					}
-					
-					class Function
+					ValueT execute(const vector<ValueT>& args)
 					{
-						public:
-						
-						string name;
-						vector<string> nameTokens;
-						
-						std::function<string(const vector<string>&)> function;
-						
-						int numberOfArguments=-1;
-						
-						Function(){}
-						Function(const string& _name,const std::function<string(const vector<string>&)>& _function,int _numberOfArguments=-1)
+						if(numberOfArguments!=-1)
 						{
-							name=_name;
-							nameTokens=Code::tokenize(name);
-							
-							function=_function;
-							
-							numberOfArguments=_numberOfArguments;
+							if(args.size()!=numberOfArguments) throw wrongNumberOfArgumentsMessage(name);
 						}
-						
-						void setFixedNumberOfArguments(int _numberOfArguments)
-						{
-							numberOfArguments=_numberOfArguments;
-						}
-						string execute(const vector<string>& args)
-						{
-							if(numberOfArguments!=-1)
-							{
-								if(args.size()!=numberOfArguments) throw errorString(wrongNumberOfArgumentsMessage(name));
-							}
-							return function(args);
-						}
-					};
-					
+						return function(args);
+					}
+				};
+				
+				private:
 					void setFixedNumberOfArguments(vector<Function>& functionsToModify,int numberOfArguments)
 					{
 						for(int f=0;f<functionsToModify.size();f++)
@@ -753,297 +1117,35 @@ class ComputerBuilder
 					
 					static string wrongNumberOfArgumentsMessage(const string& functionName)
 					{
-						return string()+"Wrong number of arguments for function '"+functionName+"'";
-					}
-					static int stringToInt(const string& str)
-					{
-						int intValue=0;
-						if(!stringToIntSimple(str,intValue)) throw errorString(string()+"Could not convert the string '"+str+"' to integer");
-						return intValue;
-					}
-					static string intToString(int intValue)
-					{
-						return std::to_string(intValue);
-					}
-					static void assertDivision(int dividend,int divisor)
-					{
-						if(divisor==0 || dividend==int(uint32_t(1)<<31) && divisor==-1)
-						{
-							throw errorString(string()+"Division/modulo operation of invalid integers: "+std::to_string(dividend)+" and "+std::to_string(divisor));
-						}
-					}
-					static bool multiplicationOverflows(int a,int b)
-					{
-						uint64_t absA=std::abs(int64_t(a));
-						uint64_t absB=std::abs(int64_t(b));
-						
-						uint64_t absC=absA*absB;
-						
-						if((a<0)!=(b<0) && absC==(uint64_t(1)<<31)) return false;
-						if(absC>=(uint64_t(1)<<31)) return true;
-						return false;
-					}
-					static bool additionOverflows_positiveAddition_bothPositive(uint64_t absA,uint64_t absB)
-					{
-						uint64_t c=absA+absB;
-						return c>=(uint64_t(1)<<31);
-					}
-					static bool additionOverflows_positiveAddition_bothNegative(uint64_t absA,uint64_t absB)
-					{
-						uint64_t c=absA+absB;
-						return c>(uint64_t(1)<<31);
-					}
-					static bool additionOverflows_positiveAddition_aPositive_bNegative(uint64_t absA,uint64_t absB)
-					{
-						uint64_t c=absA-absB;
-						if(c<(uint64_t(1)<<31)) return false;
-						if(-c<=(uint64_t(1)<<31)) return false;
-						return true;
-					}
-					static bool additionSubtractionOverflows(int a,int b,bool isSubtraction)
-					{
-						bool posA= a>=0;
-						bool posB= b>=0;
-						
-						if(isSubtraction) posB=!posB;
-						
-						uint64_t absA=std::abs(int64_t(a));
-						uint64_t absB=std::abs(int64_t(b));
-						
-						if(posA && posB) return additionOverflows_positiveAddition_bothPositive(absA,absB);
-						if(!posA && !posB) return additionOverflows_positiveAddition_bothNegative(absA,absB);
-						if(posA && !posB) return additionOverflows_positiveAddition_aPositive_bNegative(absA,absB);
-						if(!posA && posB) return additionOverflows_positiveAddition_aPositive_bNegative(absB,absA);
-						
-						return false;
-					}
-					static bool additionOverflows(int a,int b)
-					{
-						return additionSubtractionOverflows(a,b,false);
-					}
-					static bool subtractionOverflows(int a,int b)
-					{
-						return additionSubtractionOverflows(a,b,true);
+						return string()+"wrong number of arguments for function: '"+functionName+"'";
 					}
 					
-					vector<Function> unaryOperators=vector<Function>
-					{
-						Function("-",[this](const vector<string>& args)->string
-						{
-							int a=stringToInt(args[0]);
-							
-							if(uint32_t(a)==(uint32_t(1)<<31)) throw errorString(string()+"sign change out of range: "+"-"+std::to_string(a));
-							int r=-a;
-							
-							return intToString(r);
-						}),
-						Function("~",[this](const vector<string>& args)->string
-						{
-							return intToString(~stringToInt(args[0]));
-						}),
-						Function("!",[this](const vector<string>& args)->string
-						{
-							return intToString(!stringToInt(args[0]));
-						})
-					};
-					
-					vector<Function> binaryOperators=vector<Function>
-					{
-						Function("**",[this](const vector<string>& args)->string
-						{
-							int a=stringToInt(args[0]);
-							int b=stringToInt(args[1]);
-							
-							int r=0;
-							if(a==0 && b<=0) throw errorString(string()+"0 to the power of "+std::to_string(b));
-							
-							if(a==1) r=1;
-							else if(a==-1) r=(1-int(uint32_t(b)&1)*2);
-							else if(a!=0 && b>=0)
-							{
-								r=1;
-								for(int i=0;i<b;i++)
-								{
-									if(multiplicationOverflows(r,a)) throw errorString(string()+"Exponentiation result out of range: "+std::to_string(a)+"**"+std::to_string(b));
-									r*=a;
-								}
-							}
-							
-							return intToString(r);
-						}),
-						Function("*",[this](const vector<string>& args)->string
-						{
-							int a=stringToInt(args[0]);
-							int b=stringToInt(args[1]);
-							
-							if(multiplicationOverflows(a,b)) throw errorString(string()+"Multiplication result out of range: "+std::to_string(a)+"*"+std::to_string(b));
-							int r=a*b;
-							
-							return intToString(r);
-						}),
-						Function("/",[this](const vector<string>& args)->string
-						{
-							int a=stringToInt(args[0]);
-							int b=stringToInt(args[1]);
-							assertDivision(a,b);
-							return intToString(a/b);
-						}),
-						Function("%",[this](const vector<string>& args)->string
-						{
-							int a=stringToInt(args[0]);
-							int b=stringToInt(args[1]);
-							assertDivision(a,b);
-							return intToString(a%b);
-						}),
-						Function("+",[this](const vector<string>& args)->string
-						{
-							int a=stringToInt(args[0]);
-							int b=stringToInt(args[1]);
-							
-							if(additionOverflows(a,b)) throw errorString(string()+"Addition overflow: "+std::to_string(a)+"+"+std::to_string(b));
-							int r=a+b;
-							
-							return intToString(r);
-						}),
-						Function("-",[this](const vector<string>& args)->string
-						{
-							int a=stringToInt(args[0]);
-							int b=stringToInt(args[1]);
-							
-							if(subtractionOverflows(a,b)) throw errorString(string()+"Subtraction overflow: "+std::to_string(a)+"-"+std::to_string(b));
-							int r=a-b;
-							
-							return intToString(r);
-						}),
-						Function("<<",[this](const vector<string>& args)->string
-						{
-							int a=stringToInt(args[0]);
-							int b=stringToInt(args[1]);
-							if(b<0) throw errorString(string()+"Negative bit shift: "+std::to_string(a)+"<<"+std::to_string(b));
-							int c= b<32 ? (a>>b) : 0;
-							return intToString(c);
-						}),
-						Function(">>",[this](const vector<string>& args)->string
-						{
-							int a=stringToInt(args[0]);
-							int b=stringToInt(args[1]);
-							if(b<0) throw errorString(string()+"Negative bit shift: "+std::to_string(a)+">>"+std::to_string(b));
-							int c= b<32 ? (a>>b) : (a<0 ? -1 : 0);
-							return intToString(c);
-						}),
-						Function(">>>",[this](const vector<string>& args)->string
-						{
-							int a=stringToInt(args[0]);
-							int b=stringToInt(args[1]);
-							if(b<0) throw errorString(string()+"Negative bit shift: "+std::to_string(a)+">>>"+std::to_string(b));
-							int c= b<32 ? int(uint32_t(a)>>b) : 0;
-							return intToString(c);
-						}),
-						Function("<",[this](const vector<string>& args)->string
-						{
-							return intToString(stringToInt(args[0])<stringToInt(args[1]));
-						}),
-						Function("<=",[this](const vector<string>& args)->string
-						{
-							return intToString(stringToInt(args[0])<=stringToInt(args[1]));
-						}),
-						Function(">",[this](const vector<string>& args)->string
-						{
-							return intToString(stringToInt(args[0])>stringToInt(args[1]));
-						}),
-						Function(">=",[this](const vector<string>& args)->string
-						{
-							return intToString(stringToInt(args[0])>=stringToInt(args[1]));
-						}),
-						Function("==",[this](const vector<string>& args)->string
-						{
-							return intToString(stringToInt(args[0])==stringToInt(args[1]));
-						}),
-						Function("!=",[this](const vector<string>& args)->string
-						{
-							return intToString(stringToInt(args[0])!=stringToInt(args[1]));
-						}),
-						Function("&",[this](const vector<string>& args)->string
-						{
-							return intToString(uint32_t(stringToInt(args[0]))&uint32_t(stringToInt(args[1])));
-						}),
-						Function("^",[this](const vector<string>& args)->string
-						{
-							return intToString(uint32_t(stringToInt(args[0]))^uint32_t(stringToInt(args[1])));
-						}),
-						Function("|",[this](const vector<string>& args)->string
-						{
-							return intToString(uint32_t(stringToInt(args[0]))|uint32_t(stringToInt(args[1])));
-						}),
-						Function("&&",[this](const vector<string>& args)->string
-						{
-							return intToString(stringToInt(args[0])&&stringToInt(args[1]));
-						}),
-						Function("||",[this](const vector<string>& args)->string
-						{
-							return intToString(stringToInt(args[0])||stringToInt(args[1]));
-						})
-					};
-					vector<vector<string>> binaryOperatorLevels=vector<vector<string>>
-					{
-						vector<string>{"**"},
-						vector<string>{"*","/","%"},
-						vector<string>{"+","-"},
-						vector<string>{"<<",">>",">>>"},
-						vector<string>{"<","<=",">",">="},
-						vector<string>{"==","!="},
-						vector<string>{"&"},
-						vector<string>{"^"},
-						vector<string>{"|"},
-						vector<string>{"&&"},
-						vector<string>{"||"}
-					};
-					
-					Function ternaryOperator=Function("?",[this](const vector<string>& args)->string
-					{
-						return stringToInt(args[0])?args[1]:args[2];
-					});
-					
-					vector<Function> functions=vector<Function>{
-						Function("isp2",[this](const vector<string>& args)->string
-						{
-							int a=stringToInt(args[0]);
-							int r=a>0 && std::has_single_bit(uint32_t(a));
-							
-							return intToString(r);
-						},1),
-						Function("log2",[this](const vector<string>& args)->string
-						{
-							int a=stringToInt(args[0]);
-							if(a<=0) throw errorString(string()+"Logarithm of zero or negative number: "+std::to_string(a));
-							int r=int(std::countr_zero(std::bit_floor(uint32_t(a))));
-							
-							return intToString(r);
-						},1),
-						Function("p2floor",[this](const vector<string>& args)->string
-						{
-							int a=stringToInt(args[0]);
-							if(a<=0) throw errorString(string()+"invalid zero or negative number for function: "+std::to_string(a));
-							int r=int(std::bit_floor(uint32_t(a)));
-							
-							return intToString(r);
-						},1),
-						Function("p2ceil",[this](const vector<string>& args)->string
-						{
-							int a=stringToInt(args[0]);
-							if(a<=0 || a>(1<<30)) throw errorString(string()+"invalid out of range number for function: "+std::to_string(a));
-							int r=int(std::bit_ceil(uint32_t(a)));
-							
-							return intToString(r);
-						},1)
-					};
+					vector<Function> unaryOperators;
+					vector<Function> binaryOperators;
+					vector<vector<string>> binaryOperatorLevels;
+					Function ternaryOperator;
+					vector<Function> functions;
 				public:
 				
-				TemplateExpressionEvaluator()
+				void setUnaryOperators(const vector<Function>& f)
 				{
+					unaryOperators=f;
 					setFixedNumberOfArguments(unaryOperators,1);
+				}
+				void setBinaryOperators(const vector<Function>& f,const vector<vector<string>>& operatorLevels)
+				{
+					binaryOperators=f;
 					setFixedNumberOfArguments(binaryOperators,2);
+					binaryOperatorLevels=operatorLevels;
+				}
+				void setTernaryOperator(const Function& f)
+				{
+					ternaryOperator=f;
 					ternaryOperator.setFixedNumberOfArguments(3);
+				}
+				void setFunctions(const vector<Function>& f)
+				{
+					functions=f;
 				}
 				
 				private:
@@ -1125,66 +1227,78 @@ class ComputerBuilder
 						else return false;
 					}
 					
-					string executeUnaryOperator(const string& op,const string& a)
+					ValueT executeUnaryOperator(const string& op,const ValueT& a)
 					{
 						int index=findWithName(unaryOperators,op);
 						if(index!=-1)
 						{
-							return unaryOperators[index].execute(vector<string>{a});
+							if(!unaryOperators[index].defined) executingFunctionNotDefinedMessage(op,__LINE__);
+							return unaryOperators[index].execute(vector<ValueT>{a});
 						}
-						else throw errorString(__LINE__);
+						else throw executingFunctionNotDefinedMessage(op,__LINE__);
 					}
-					string executeBinaryOperator(const string& op,const string& a,const string& b)
+					ValueT executeBinaryOperator(const string& op,const ValueT& a,const ValueT& b)
 					{
 						int index=findWithName(binaryOperators,op);
 						if(index!=-1)
 						{
-							return binaryOperators[index].execute(vector<string>{a,b});
+							if(!binaryOperators[index].defined) executingFunctionNotDefinedMessage(op,__LINE__);
+							return binaryOperators[index].execute(vector<ValueT>{a,b});
 						}
-						else throw errorString(__LINE__);
+						else throw executingFunctionNotDefinedMessage(op,__LINE__);
 					}
-					string executeTernaryOperator(const string& a,const string& b,const string& c)
+					ValueT executeTernaryOperator(const ValueT& a,const ValueT& b,const ValueT& c)
 					{
-						return ternaryOperator.execute(vector<string>{a,b,c});
+						if(!ternaryOperator.defined) executingTernaryOperatorNotDefinedMessage(__LINE__);
+						return ternaryOperator.execute(vector<ValueT>{a,b,c});
 					}
-					string executeFunction(const string& functionName,const vector<string>& args)
+					ValueT executeFunction(const string& functionName,const vector<ValueT>& args)
 					{
 						int index=findWithName(functions,functionName);
 						if(index!=-1)
 						{
+							if(!functions[index].defined) executingFunctionNotDefinedMessage(functionName,__LINE__);
 							return functions[index].execute(args);
 						}
-						else throw errorString(__LINE__);
+						else throw executingFunctionNotDefinedMessage(functionName,__LINE__);
 					}
 					
+					string executingFunctionNotDefinedMessage(const string& functionName,int errorCode)
+					{
+						return string()+"internal error: executing a function/operator that is not defined: '"+functionName+"'";
+					}
+					string executingTernaryOperatorNotDefinedMessage(int errorCode)
+					{
+						return "internal error: executing a ternary operator that is not defined";
+					}
 					string expectedContinuationMessage(int errorCode)
 					{
-						return "Expected continuation of expression";
+						return "expected continuation of expression";
 					}
 					string expectedTokenMessage(const string& expectedToken,const string& actualToken,int errorCode)
 					{
-						return string()+"Expected '"+expectedToken+"' instead of '"+actualToken+"'";
+						return string()+"expected '"+expectedToken+"' instead of '"+actualToken+"'";
 					}
 					string unexpectedTokenMessage(const string& token,int errorCode)
 					{
-						return string()+"Unexpected symbol '"+token+"'";
+						return string()+"unexpected symbol '"+token+"'";
 					}
 					
-					string evaluateExpressionPart(const Code& code,size_t& t,const vector<TemplateArgument>& templateArguments,int level)
+					ValueT evaluateExpressionPart(const Code& code,size_t& t,const vector<Variable>& variables,int level)
 					{
-						if(t>=code.tokens.size()) throw errorString(expectedContinuationMessage(__LINE__));
+						if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
 						
 						string token=code.tokens[t];
 						
-						string lvalue;
+						ValueT lvalue;
 						
 						if(token=="(")
 						{
 							t++;
-							if(t>=code.tokens.size()) throw errorString(expectedContinuationMessage(__LINE__));
-							lvalue=evaluateExpressionPart(code,t,templateArguments,0);
-							if(t>=code.tokens.size()) throw errorString(expectedContinuationMessage(__LINE__));
-							if(code.tokens[t]!=")") throw errorString(expectedTokenMessage(")",code.tokens[t],__LINE__));
+							if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
+							lvalue=evaluateExpressionPart(code,t,variables,0);
+							if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
+							if(code.tokens[t]!=")") throw expectedTokenMessage(")",code.tokens[t],__LINE__);
 							t++;
 						}
 						else if(Code::isIdentifierToken(token))
@@ -1192,43 +1306,43 @@ class ComputerBuilder
 							string functionName;
 							if(parseFunctionName(code,t,functionName))
 							{
-								if(t>=code.tokens.size()) throw errorString(expectedContinuationMessage(__LINE__));
-								if(code.tokens[t]!="(") throw errorString(expectedTokenMessage("(",code.tokens[t],__LINE__));
+								if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
+								if(code.tokens[t]!="(") throw expectedTokenMessage("(",code.tokens[t],__LINE__);
 								t++;
-								if(t>=code.tokens.size()) throw errorString(expectedContinuationMessage(__LINE__));
+								if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
 								
-								vector<string> functionArguments;
+								vector<ValueT> functionArguments;
 								
 								for(;;)
 								{
 									if(code.tokens[t]==")") break;
 									
-									functionArguments.push_back(evaluateExpressionPart(code,t,templateArguments,0));
+									functionArguments.push_back(evaluateExpressionPart(code,t,variables,0));
 									
-									if(t>=code.tokens.size()) throw errorString(expectedContinuationMessage(__LINE__));
+									if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
 									if(code.tokens[t]==",")
 									{
 										t++;
-										if(t>=code.tokens.size()) throw errorString(expectedContinuationMessage(__LINE__));
+										if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
 									}
-									else if(code.tokens[t]!=")") throw errorString(expectedTokenMessage(")",code.tokens[t],__LINE__));
+									else if(code.tokens[t]!=")") throw expectedTokenMessage(")",code.tokens[t],__LINE__);
 								}
 								
 								lvalue=executeFunction(functionName,functionArguments);
 								
-								if(t>=code.tokens.size()) throw errorString(expectedContinuationMessage(__LINE__));
-								if(code.tokens[t]!=")") throw errorString(expectedTokenMessage(")",code.tokens[t],__LINE__));
+								if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
+								if(code.tokens[t]!=")") throw expectedTokenMessage(")",code.tokens[t],__LINE__);
 								t++;
 							}
 							else
 							{
-								lvalue=getTemplateArgumentWithName(token,templateArguments);
+								lvalue=getVariableWithName(token,variables);
 								t++;
 							}
 						}
 						else if(Code::isNumberToken(token))
 						{
-							lvalue=token;
+							lvalue=ValueT(token);
 							t++;
 						}
 						else
@@ -1236,10 +1350,10 @@ class ComputerBuilder
 							string op;
 							if(parseUnaryOperator(code,t,op))
 							{
-								if(t>=code.tokens.size()) throw errorString(expectedContinuationMessage(__LINE__));
-								lvalue=executeUnaryOperator(op,evaluateExpressionPart(code,t,templateArguments,getMaximumBinaryOperatorLevel()));
+								if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
+								lvalue=executeUnaryOperator(op,evaluateExpressionPart(code,t,variables,getMaximumBinaryOperatorLevel()));
 							}
-							else throw errorString(unexpectedTokenMessage(code.tokens[t],__LINE__));
+							else throw unexpectedTokenMessage(code.tokens[t],__LINE__);
 						}
 						
 						for(;;)
@@ -1248,21 +1362,21 @@ class ComputerBuilder
 							token=code.tokens[t];
 							if(token=="," || token==")") break;
 							
-							if(token=="?")
+							if(token=="?" && ternaryOperator.defined)
 							{
 								if(level>0) break;
 								
 								t++;
-								if(t>=code.tokens.size()) throw errorString(expectedContinuationMessage(__LINE__));
+								if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
 								
-								string valueA=evaluateExpressionPart(code,t,templateArguments,0);
+								ValueT valueA=evaluateExpressionPart(code,t,variables,0);
 								
-								if(t>=code.tokens.size()) throw errorString(expectedContinuationMessage(__LINE__));
-								if(code.tokens[t]!=":") throw errorString(expectedTokenMessage(":",code.tokens[t],__LINE__));
+								if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
+								if(code.tokens[t]!=":") throw expectedTokenMessage(":",code.tokens[t],__LINE__);
 								t++;
-								if(t>=code.tokens.size()) throw errorString(expectedContinuationMessage(__LINE__));
+								if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
 								
-								string valueB=evaluateExpressionPart(code,t,templateArguments,0);
+								ValueT valueB=evaluateExpressionPart(code,t,variables,0);
 								
 								lvalue=executeTernaryOperator(lvalue,valueA,valueB);
 								
@@ -1277,7 +1391,7 @@ class ComputerBuilder
 								if(operatorLevel>level)
 								{
 									if(t>=code.tokens.size()) throw 1;
-									lvalue=executeBinaryOperator(op,lvalue,evaluateExpressionPart(code,t,templateArguments,operatorLevel));
+									lvalue=executeBinaryOperator(op,lvalue,evaluateExpressionPart(code,t,variables,operatorLevel));
 								}
 								else
 								{
@@ -1285,18 +1399,328 @@ class ComputerBuilder
 									break;
 								}
 							}
-							else throw errorString(unexpectedTokenMessage(code.tokens[t],__LINE__));
+							else throw unexpectedTokenMessage(code.tokens[t],__LINE__);
 						}
 						
 						return lvalue;
 					}
 				public:
 				
-				string evaluate(const string& expressionString,const vector<TemplateArgument>& templateArguments)
+				ValueT evaluate(const string& expressionString,const vector<Variable>& variables)
 				{
 					Code code(expressionString);
 					size_t t=0;
-					return evaluateExpressionPart(code,t,templateArguments,0);
+					return evaluateExpressionPart(code,t,variables,0);
+				}
+			};
+			
+			class TemplateExpressionEvaluator
+			{
+				private:
+					ExpressionEvaluator<string> expressionEvaluator;
+					using Function=ExpressionEvaluator<string>::Function;
+					
+					static int stringToInt(const string& str)
+					{
+						int intValue=0;
+						if(!stringToIntSimple(str,intValue)) throw string()+"could not convert the string '"+str+"' to integer";
+						return intValue;
+					}
+					static string intToString(int intValue)
+					{
+						return std::to_string(intValue);
+					}
+					static SafeInteger stringToSafeInteger(const string& str)
+					{
+						return SafeInteger(stringToInt(str));
+					}
+					static string safeIntegerToString(const SafeInteger& value)
+					{
+						return std::to_string(value.getValue());
+					}
+				public:
+				
+				TemplateExpressionEvaluator()
+				{
+					vector<ExpressionEvaluator<string>::Function> unaryOperators=vector<Function>
+					{
+						Function("-",[this](const vector<string>& args)->string
+						{
+							SafeInteger a=stringToSafeInteger(args[0]);
+							
+							SafeInteger r=-a;
+							
+							return safeIntegerToString(r);
+						}),
+						Function("~",[this](const vector<string>& args)->string
+						{
+							SafeInteger a=stringToSafeInteger(args[0]);
+							
+							SafeInteger r=~a;
+							
+							return safeIntegerToString(r);
+						}),
+						Function("!",[this](const vector<string>& args)->string
+						{
+							SafeInteger a=stringToSafeInteger(args[0]);
+							
+							SafeInteger r=!a;
+							
+							return safeIntegerToString(r);
+						})
+					};
+					
+					vector<Function> binaryOperators=vector<Function>
+					{
+						Function("**",[this](const vector<string>& args)->string
+						{
+							SafeInteger a=stringToSafeInteger(args[0]);
+							SafeInteger b=stringToSafeInteger(args[1]);
+							
+							SafeInteger r=a.pow(b);
+							
+							return safeIntegerToString(r);
+						}),
+						Function("*",[this](const vector<string>& args)->string
+						{
+							SafeInteger a=stringToSafeInteger(args[0]);
+							SafeInteger b=stringToSafeInteger(args[1]);
+							
+							SafeInteger r=a*b;
+							
+							return safeIntegerToString(r);
+						}),
+						Function("/",[this](const vector<string>& args)->string
+						{
+							SafeInteger a=stringToSafeInteger(args[0]);
+							SafeInteger b=stringToSafeInteger(args[1]);
+							
+							SafeInteger r=a/b;
+							
+							return safeIntegerToString(r);
+						}),
+						Function("%",[this](const vector<string>& args)->string
+						{
+							SafeInteger a=stringToSafeInteger(args[0]);
+							SafeInteger b=stringToSafeInteger(args[1]);
+							
+							SafeInteger r=a%b;
+							
+							return safeIntegerToString(r);
+						}),
+						Function("+",[this](const vector<string>& args)->string
+						{
+							SafeInteger a=stringToSafeInteger(args[0]);
+							SafeInteger b=stringToSafeInteger(args[1]);
+							
+							SafeInteger r=a+b;
+							
+							return safeIntegerToString(r);
+						}),
+						Function("-",[this](const vector<string>& args)->string
+						{
+							SafeInteger a=stringToSafeInteger(args[0]);
+							SafeInteger b=stringToSafeInteger(args[1]);
+							
+							SafeInteger r=a-b;
+							
+							return safeIntegerToString(r);
+						}),
+						Function("<<",[this](const vector<string>& args)->string
+						{
+							SafeInteger a=stringToSafeInteger(args[0]);
+							SafeInteger b=stringToSafeInteger(args[1]);
+							
+							SafeInteger r=(a<<b);
+							
+							return safeIntegerToString(r);
+						}),
+						Function(">>",[this](const vector<string>& args)->string
+						{
+							SafeInteger a=stringToSafeInteger(args[0]);
+							SafeInteger b=stringToSafeInteger(args[1]);
+							
+							SafeInteger r=(a>>b);
+							
+							return safeIntegerToString(r);
+						}),
+						Function(">>>",[this](const vector<string>& args)->string
+						{
+							SafeInteger a=stringToSafeInteger(args[0]);
+							SafeInteger b=stringToSafeInteger(args[1]);
+							
+							SafeInteger r=a.shiftRightLogical(b);
+							
+							return safeIntegerToString(r);
+						}),
+						Function("<",[this](const vector<string>& args)->string
+						{
+							SafeInteger a=stringToSafeInteger(args[0]);
+							SafeInteger b=stringToSafeInteger(args[1]);
+							
+							SafeInteger r= a<b;
+							
+							return safeIntegerToString(r);
+						}),
+						Function("<=",[this](const vector<string>& args)->string
+						{
+							SafeInteger a=stringToSafeInteger(args[0]);
+							SafeInteger b=stringToSafeInteger(args[1]);
+							
+							SafeInteger r= a<=b;
+							
+							return safeIntegerToString(r);
+						}),
+						Function(">",[this](const vector<string>& args)->string
+						{
+							SafeInteger a=stringToSafeInteger(args[0]);
+							SafeInteger b=stringToSafeInteger(args[1]);
+							
+							SafeInteger r= a>b;
+							
+							return safeIntegerToString(r);
+						}),
+						Function(">=",[this](const vector<string>& args)->string
+						{
+							SafeInteger a=stringToSafeInteger(args[0]);
+							SafeInteger b=stringToSafeInteger(args[1]);
+							
+							SafeInteger r= a>=b;
+							
+							return safeIntegerToString(r);
+						}),
+						Function("==",[this](const vector<string>& args)->string
+						{
+							SafeInteger a=stringToSafeInteger(args[0]);
+							SafeInteger b=stringToSafeInteger(args[1]);
+							
+							SafeInteger r= a==b;
+							
+							return safeIntegerToString(r);
+						}),
+						Function("!=",[this](const vector<string>& args)->string
+						{
+							SafeInteger a=stringToSafeInteger(args[0]);
+							SafeInteger b=stringToSafeInteger(args[1]);
+							
+							SafeInteger r= a!=b;
+							
+							return safeIntegerToString(r);
+						}),
+						Function("&",[this](const vector<string>& args)->string
+						{
+							SafeInteger a=stringToSafeInteger(args[0]);
+							SafeInteger b=stringToSafeInteger(args[1]);
+							
+							SafeInteger r= a&b;
+							
+							return safeIntegerToString(r);
+						}),
+						Function("^",[this](const vector<string>& args)->string
+						{
+							SafeInteger a=stringToSafeInteger(args[0]);
+							SafeInteger b=stringToSafeInteger(args[1]);
+							
+							SafeInteger r= a^b;
+							
+							return safeIntegerToString(r);
+						}),
+						Function("|",[this](const vector<string>& args)->string
+						{
+							SafeInteger a=stringToSafeInteger(args[0]);
+							SafeInteger b=stringToSafeInteger(args[1]);
+							
+							SafeInteger r= a|b;
+							
+							return safeIntegerToString(r);
+						}),
+						Function("&&",[this](const vector<string>& args)->string
+						{
+							SafeInteger a=stringToSafeInteger(args[0]);
+							SafeInteger b=stringToSafeInteger(args[1]);
+							
+							SafeInteger r= a && b;
+							
+							return safeIntegerToString(r);
+						}),
+						Function("||",[this](const vector<string>& args)->string
+						{
+							SafeInteger a=stringToSafeInteger(args[0]);
+							SafeInteger b=stringToSafeInteger(args[1]);
+							
+							SafeInteger r= a || b;
+							
+							return safeIntegerToString(r);
+						})
+					};
+					vector<vector<string>> binaryOperatorLevels=vector<vector<string>>
+					{
+						vector<string>{"**"},
+						vector<string>{"*","/","%"},
+						vector<string>{"+","-"},
+						vector<string>{"<<",">>",">>>"},
+						vector<string>{"<","<=",">",">="},
+						vector<string>{"==","!="},
+						vector<string>{"&"},
+						vector<string>{"^"},
+						vector<string>{"|"},
+						vector<string>{"&&"},
+						vector<string>{"||"}
+					};
+					
+					Function ternaryOperator=Function("?",[this](const vector<string>& args)->string
+					{
+						return stringToInt(args[0])?args[1]:args[2];
+					});
+					
+					vector<Function> functions=vector<Function>{
+						Function("isp2",[this](const vector<string>& args)->string
+						{
+							int a=stringToInt(args[0]);
+							int r=a>0 && std::has_single_bit(uint32_t(a));
+							
+							return intToString(r);
+						},1),
+						Function("log2",[this](const vector<string>& args)->string
+						{
+							int a=stringToInt(args[0]);
+							if(a<=0) throw string()+"logarithm of zero or negative number: "+std::to_string(a);
+							int r=int(std::countr_zero(std::bit_floor(uint32_t(a))));
+							
+							return intToString(r);
+						},1),
+						Function("p2floor",[this](const vector<string>& args)->string
+						{
+							int a=stringToInt(args[0]);
+							if(a<=0) throw string()+"invalid zero or negative number for function: "+std::to_string(a);
+							int r=int(std::bit_floor(uint32_t(a)));
+							
+							return intToString(r);
+						},1),
+						Function("p2ceil",[this](const vector<string>& args)->string
+						{
+							int a=stringToInt(args[0]);
+							if(a<=0 || a>(1<<30)) throw string()+"invalid out of range number for function: "+std::to_string(a);
+							int r=int(std::bit_ceil(uint32_t(a)));
+							
+							return intToString(r);
+						},1)
+					};
+					
+					expressionEvaluator.setUnaryOperators(unaryOperators);
+					expressionEvaluator.setBinaryOperators(binaryOperators,binaryOperatorLevels);
+					expressionEvaluator.setTernaryOperator(ternaryOperator);
+					expressionEvaluator.setFunctions(functions);
+				}
+				
+				string evaluate(const string& expressionString,const vector<TemplateArgument>& templateArguments)
+				{
+					vector<ExpressionEvaluator<string>::Variable> variables(templateArguments.size());
+					for(size_t i=0;i<templateArguments.size();i++)
+					{
+						variables[i]=ExpressionEvaluator<string>::Variable(templateArguments[i].name,templateArguments[i].value);
+					}
+					return expressionEvaluator.evaluate(expressionString,variables);
 				}
 			};
 			
@@ -1309,7 +1733,7 @@ class ComputerBuilder
 				}
 				catch(const string& str)
 				{
-					throw errorString(string("Error in expression evaluation: ")+str,lineIndex);
+					throw errorString(string()+"Error in expression evaluation: "+str+"\nThe expression is: "+expressionString,lineIndex);
 				}
 			}
 			
@@ -1364,6 +1788,14 @@ class ComputerBuilder
 						{
 							str=str.substr(1,str.size()-2);
 							
+							bool putResult=true;
+							
+							if(str.size()>0 && str[0]=='/')
+							{
+								putResult=false;
+								str=str.substr(1,str.size()-1);
+							}
+							
 							size_t equalSign=str.find_first_of("=");
 							if(equalSign==string::npos) throw errorString("Expected '='",lineIndex);
 							
@@ -1412,6 +1844,8 @@ class ComputerBuilder
 							}
 							
 							if(findWithName(templateParameters,name)!=-1) throw errorString(string()+"Template argument '"+name+"' already defined",lineIndex);
+							
+							if(!putResult && values.size()>1) throw errorString(string()+"Hidden template argument '"+name+"' with multiple values",lineIndex);
 							
 							templateParameters.emplace_back(name,values);
 						}
@@ -1483,24 +1917,34 @@ class ComputerBuilder
 									
 									if(str.size()==0) throw errorString("Empty template expression",lineIndex);
 									
+									bool putResult=true;
 									bool assertMode=false;
 									if(str[0]=='?')
 									{
+										putResult=false;
 										assertMode=true;
+										str=str.substr(1,str.size()-1);
+									}
+									else if(str[0]=='/')
+									{
+										putResult=false;
 										str=str.substr(1,str.size()-1);
 									}
 									
 									if(templateLineIndex==0)
 									{
-										size_t equalSign=str.find_first_of("=");
-										if(equalSign==string::npos) throw errorString(__LINE__,lineIndex);
-										
-										string name=str.substr(0,equalSign);
-										
-										int parameterIndex=findWithName(templateParameters,name);
-										if(parameterIndex==-1) throw errorString(__LINE__,lineIndex);
-										
-										finalLine+=templateArguments[parameterIndex].value;
+										if(putResult)
+										{
+											size_t equalSign=str.find_first_of("=");
+											if(equalSign==string::npos) throw errorString(__LINE__,lineIndex);
+											
+											string name=str.substr(0,equalSign);
+											
+											int parameterIndex=findWithName(templateParameters,name);
+											if(parameterIndex==-1) throw errorString(__LINE__,lineIndex);
+											
+											finalLine+=templateArguments[parameterIndex].value;
+										}
 									}
 									else
 									{
@@ -1514,7 +1958,8 @@ class ComputerBuilder
 												break;
 											}
 										}
-										else
+										
+										if(putResult)
 										{
 											finalLine+=expressionResult;
 										}

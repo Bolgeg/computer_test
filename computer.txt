@@ -7,7 +7,7 @@ output=<NAME> input
 
 
 
-<NAME=not><N=2...16>:
+<NAME=not><N=2...32>:
 
 output: out <N>
 input: in <N>
@@ -28,7 +28,7 @@ output=<NAME> inputA inputB
 
 
 
-<NAME=nand,and,or,xor,nor,andnot><N=2...16>:
+<NAME=nand,and,or,xor,nor,andnot><N=2...32>:
 
 output: out <N>
 inputA: in <N>
@@ -37,6 +37,48 @@ inputB: in <N>
 a=<NAME><N-1> inputA[0:<N-1>] inputB[0:<N-1>]
 b=<NAME>1 inputA[<N-1>] inputB[<N-1>]
 output=concat<N-1>_1 a b
+
+
+
+<NAME=nand,and,or,xor,nor,andnot>P0:
+
+output: out
+inputA: in
+inputB: in
+
+output=<NAME> inputA inputB
+
+
+
+notP0:
+
+output: out
+input: in
+
+output=not input
+
+
+
+notP<P=1...24>:
+
+output: out <2**P>
+input: in <2**P>
+
+a=notP<P-1> input[0:<2**P/2>]
+b=notP<P-1> input[<2**P/2>:<2**P>]
+output=concat<2**P/2>_<2**P/2> a b
+
+
+
+<NAME=nand,and,or,xor,nor,andnot>P<P=1...24>:
+
+output: out <2**P>
+inputA: in <2**P>
+inputB: in <2**P>
+
+a=<NAME>P<P-1> inputA[0:<2**P/2>] inputB[0:<2**P/2>]
+b=<NAME>P<P-1> inputA[<2**P/2>:<2**P>] inputB[<2**P/2>:<2**P>]
+output=concat<2**P/2>_<2**P/2> a b
 
 
 
@@ -51,7 +93,7 @@ output=<NAME> inputA inputB inputC
 
 
 
-<NAME=andABC,orABC,xorABC><N=2...16>:
+<NAME=andABC,orABC,xorABC><N=2...32>:
 
 output: out <N>
 inputA: in <N>
@@ -98,13 +140,14 @@ output=nand a b
 
 xor:
 
-output: out
-inputA: in
-inputB: in
+o: out
+a: in
+b: in
 
-a=or inputA inputB
-b=nand inputA inputB
-output=and a b
+c=nand a b
+d=nand c a
+e=nand c b
+o=nand d e
 
 
 
@@ -217,7 +260,7 @@ output outputCarry=inc input inputCarry
 
 
 
-inc<N=2...16>:
+inc<N=2...32>:
 
 output: out <N>
 outputCarry: out
@@ -734,7 +777,7 @@ output=set input
 
 
 
-fanOut<N=2...16>:
+fanOut<N=2...32>:
 
 output: out <N>
 
@@ -754,7 +797,7 @@ output=set input
 
 
 
-fanOutP<N=1...16>:
+fanOutP<N=1...24>:
 
 output: out <2**N>
 
@@ -845,7 +888,7 @@ output=concat<2**N/2>_<2**N/2> a b
 
 
 
-ternaryOperator<N=1...16>:
+ternaryOperator<N=1...32>:
 
 output: out <N>
 
@@ -883,7 +926,7 @@ output=multiplexer inputControl inputA inputB
 
 
 
-multiplexerArray<N=2...16>:
+multiplexerArray<N=2...32>:
 
 output: out <N>
 
@@ -980,7 +1023,7 @@ output=concat<WORD/2>_<WORD/2> a b
 
 
 
-chooseAB<S=1...16>:
+chooseAB<S=1...32>:
 
 output: out <S>
 
@@ -1564,43 +1607,964 @@ output=set<S> a[0:<S>]
 
 
 
-addressableMemoryConsecutiveWords<ADDRESS=1...16>_1_<SEQ=1,2,4,8,16>:
-<?(2**ADDRESS>SEQ)>
+andorand:
 
-output: out <SEQ>
+o: out
 
-addressForOutput: in <ADDRESS>
-writeMaskForInput: in <SEQ>
-addressForInput: in <ADDRESS>
-input: in <SEQ>
+a: in
+b: in
+c: in
+d: in
 
-memory: reg <2**ADDRESS>
-
-memoryWriteMask=bitRotateExtendP<ADDRESS>_<SEQ> addressForInput writeMaskForInput
-memoryInput=bitRotateExtendP<ADDRESS>_<SEQ> addressForInput input
-memory=multiplexerArrayP<ADDRESS> memoryWriteMask memory memoryInput
-
-output=bitRotateExtractP<ADDRESS>_<SEQ> addressForOutput memory
+r1=nand a b
+r2=nand c d
+o=nand r1 r2
 
 
 
-addressableMemoryConsecutiveWords<ADDRESS=1...16>_<WORD=2,4,8,16>_<SEQ=1,2,4,8,16>:
-<?(2**ADDRESS>SEQ)>
+swapc1_preComputedData:
+
+oa: out
+ob: out
+
+swap: in
+swap_not: in
+a: in
+b: in
+
+oa=andorand swap_not a swap b
+ob=andorand swap a swap_not b
+
+
+
+swapc<S=2...16>_preComputedData:
+
+oa: out <S>
+ob: out <S>
+
+swap: in
+swap_not: in
+a: in <S>
+b: in <S>
+
+oa1 ob1=swapc<S-1>_preComputedData swap swap_not a[0:<S-1>] b[0:<S-1>]
+oa2 ob2=swapc1_preComputedData swap swap_not a[<S-1>] b[<S-1>]
+oa=concat<S-1>_1 oa1 oa2
+ob=concat<S-1>_1 ob1 ob2
+
+
+
+swapcP0_preComputedData:
+
+oa: out
+ob: out
+
+swap: in
+swap_not: in
+a: in
+b: in
+
+oa ob=swapc1_preComputedData swap swap_not a b
+
+
+
+swapcP<SIZEP=1...24>_preComputedData:
+
+oa: out <2**SIZEP>
+ob: out <2**SIZEP>
+
+swap: in
+swap_not: in
+a: in <2**SIZEP>
+b: in <2**SIZEP>
+
+oa1 ob1=swapcP<SIZEP-1>_preComputedData swap swap_not a[0:<2**SIZEP/2>] b[0:<2**SIZEP/2>]
+oa2 ob2=swapcP<SIZEP-1>_preComputedData swap swap_not a[<2**SIZEP/2>:<2**SIZEP>] b[<2**SIZEP/2>:<2**SIZEP>]
+oa=concat<2**SIZEP/2>_<2**SIZEP/2> oa1 oa2
+ob=concat<2**SIZEP/2>_<2**SIZEP/2> ob1 ob2
+
+
+
+selectorP0:
+
+o: out
+
+i_select_a: in
+i_select_b: in
+i_a: in
+i_b: in
+
+a=nand i_select_a i_a
+b=nand i_select_b i_b
+o=nand a b
+
+
+
+selectorP<SIZEP=1...24>:
+
+o: out <2**SIZEP>
+
+i_select_a: in <2**SIZEP>
+i_select_b: in <2**SIZEP>
+i_a: in <2**SIZEP>
+i_b: in <2**SIZEP>
+
+a=selectorP<SIZEP-1> i_select_a[0:<2**SIZEP/2>] i_select_b[0:<2**SIZEP/2>] i_a[0:<2**SIZEP/2>] i_b[0:<2**SIZEP/2>]
+b=selectorP<SIZEP-1> i_select_a[<2**SIZEP/2>:<2**SIZEP>] i_select_b[<2**SIZEP/2>:<2**SIZEP>] i_a[<2**SIZEP/2>:<2**SIZEP>] i_b[<2**SIZEP/2>:<2**SIZEP>]
+o=concat<2**SIZEP/2>_<2**SIZEP/2> a b
+
+
+
+deselectorP0:
+
+o_a: out
+o_b: out
+o_a_not: out
+o_b_not: out
+
+i_set_a: in
+i_set_b: in
+i_value: in
+
+a_not=nand i_set_a i_value
+b_not=nand i_set_b i_value
+o_a=not a_not
+o_b=not b_not
+o_a_not=set a_not
+o_b_not=set b_not
+
+
+
+deselectorP<SIZEP=1...24>:
+
+o_a: out <2**SIZEP>
+o_b: out <2**SIZEP>
+o_a_not: out <2**SIZEP>
+o_b_not: out <2**SIZEP>
+
+i_set_a: in <2**SIZEP>
+i_set_b: in <2**SIZEP>
+i_value: in <2**SIZEP>
+
+a1 b1 a1_not b1_not=deselectorP<SIZEP-1> i_set_a[0:<2**SIZEP/2>] i_set_b[0:<2**SIZEP/2>] i_value[0:<2**SIZEP/2>]
+a2 b2 a2_not b2_not=deselectorP<SIZEP-1> i_set_a[<2**SIZEP/2>:<2**SIZEP>] i_set_b[<2**SIZEP/2>:<2**SIZEP>] i_value[<2**SIZEP/2>:<2**SIZEP>]
+o_a=concat<2**SIZEP/2>_<2**SIZEP/2> a1 a2
+o_b=concat<2**SIZEP/2>_<2**SIZEP/2> b1 b2
+o_a_not=concat<2**SIZEP/2>_<2**SIZEP/2> a1_not a2_not
+o_b_not=concat<2**SIZEP/2>_<2**SIZEP/2> b1_not b2_not
+
+
+
+ornor_negInputsP0:
+
+o_or: out
+o_nor: out
+
+i_a_not: in
+i_b_not: in
+
+a=nand i_a_not i_b_not
+o_or=set a
+o_nor=not a
+
+
+
+ornor_negInputsP<SIZEP=1...24>:
+
+o_or: out <2**SIZEP>
+o_nor: out <2**SIZEP>
+
+i_a_not: in <2**SIZEP>
+i_b_not: in <2**SIZEP>
+
+a a_not=ornor_negInputsP<SIZEP-1> i_a_not[0:<2**SIZEP/2>] i_b_not[0:<2**SIZEP/2>]
+b b_not=ornor_negInputsP<SIZEP-1> i_a_not[<2**SIZEP/2>:<2**SIZEP>] i_b_not[<2**SIZEP/2>:<2**SIZEP>]
+o_or=concat<2**SIZEP/2>_<2**SIZEP/2> a b
+o_nor=concat<2**SIZEP/2>_<2**SIZEP/2> a_not b_not
+
+
+
+bitInterleaveP<SIZEP=0...24>_wordP<IWORDP=0...24>:
+<?(IWORDP==SIZEP)>
+
+o: out <2**SIZEP*2>
+
+i_a: in <2**SIZEP>
+i_b: in <2**SIZEP>
+
+o=concat<2**SIZEP>_<2**SIZEP> i_a i_b
+
+
+
+bitInterleaveP<SIZEP=0...24>_wordP<IWORDP=0...24>:
+<?(IWORDP<SIZEP)>
+
+o: out <2**SIZEP*2>
+
+i_a: in <2**SIZEP>
+i_b: in <2**SIZEP>
+
+a=bitInterleaveP<SIZEP-1>_wordP<IWORDP> i_a[0:<2**SIZEP/2>] i_b[0:<2**SIZEP/2>]
+b=bitInterleaveP<SIZEP-1>_wordP<IWORDP> i_a[<2**SIZEP/2>:<2**SIZEP>] i_b[<2**SIZEP/2>:<2**SIZEP>]
+o=concat<2**SIZEP>_<2**SIZEP> a b
+
+
+
+bitTransposeP<SIZEP=0...24>_wordP<IWORDP=0...24>:
+<?(IWORDP==SIZEP)>
+
+o: out <2**SIZEP>
+
+i: in <2**SIZEP>
+
+o=set<2**SIZEP> i
+
+
+
+bitTransposeP<SIZEP=0...24>_wordP<IWORDP=0...24>:
+<?(IWORDP<SIZEP)>
+
+o: out <2**SIZEP>
+
+i: in <2**SIZEP>
+
+a=bitTransposeP<SIZEP-1>_wordP<IWORDP> i[0:<2**SIZEP/2>]
+b=bitTransposeP<SIZEP-1>_wordP<IWORDP> i[<2**SIZEP/2>:<2**SIZEP>]
+o=bitInterleaveP<SIZEP-1>_wordP<SIZEP-IWORDP-1> a b
+
+
+
+fanOutBitwiseP<BP=0...24>_P0:
+
+o: out <2**BP>
+
+i: in
+
+o=fanOutP<BP> i
+
+
+
+fanOutBitwiseP<BP=0...24>_P<IP=1...24>:
+<?(BP+IP<=24)>
+
+o: out <2**(IP+BP)>
+
+i: in <2**IP>
+
+a=fanOutBitwiseP<BP>_P<IP-1> i[0:<2**IP/2>]
+b=fanOutBitwiseP<BP>_P<IP-1> i[<2**IP/2>:<2**IP>]
+o=concat<2**(IP+BP)/2>_<2**(IP+BP)/2> a b
+
+
+
+selectorChainP1_P0_internal:
+
+o: out
+
+i_index_not: in
+i_index: in
+i_array: in 2
+
+o=selectorP0 i_index_not i_index i_array[0] i_array[1]
+
+
+
+selectorChainP<SIZEP=2...24>_P0_internal:
+
+o: out
+
+i_index_not: in <SIZEP>
+i_index: in <SIZEP>
+i_array: in <2**SIZEP>
+
+a=selectorChainP<SIZEP-1>_P0_internal i_index_not[0:<SIZEP-1>] i_index[0:<SIZEP-1>] i_array[0:<2**SIZEP/2>]
+b=selectorChainP<SIZEP-1>_P0_internal i_index_not[0:<SIZEP-1>] i_index[0:<SIZEP-1>] i_array[<2**SIZEP/2>:<2**SIZEP>]
+o=selectorP0 i_index_not[<SIZEP-1>] i_index[<SIZEP-1>] a b
+
+
+
+selectorChainP<SIZEP=1...24>_P<RP=1...22>_internal:
+<?(RP<SIZEP)>
+
+o: out <2**RP>
+
+i_index_not: in <SIZEP-RP>
+i_index: in <SIZEP-RP>
+i_array: in <2**SIZEP>
+
+a=selectorChainP<SIZEP-1>_P<RP-1>_internal i_index_not i_index i_array[0:<2**SIZEP/2>]
+b=selectorChainP<SIZEP-1>_P<RP-1>_internal i_index_not i_index i_array[<2**SIZEP/2>:<2**SIZEP>]
+o=concat<2**RP/2>_<2**RP/2> a b
+
+
+
+selectorChainP<SIZEP=1...24>_P<RP=0...22>:
+<?(RP<SIZEP)>
+
+o: out <2**RP>
+
+i_index_not: in <SIZEP-RP>
+i_index: in <SIZEP-RP>
+i_array: in <2**SIZEP>
+
+array_transposed=bitTransposeP<SIZEP>_wordP<RP> i_array
+o=selectorChainP<SIZEP>_P<RP>_internal i_index_not i_index array_transposed
+
+
+
+deselectorChainP1_P0_internal:
+
+o: out 2
+o_not: out 2
+
+i_index_not: in
+i_index: in
+i_value: in
+
+a b a_not b_not=deselectorP0 i_index_not i_index i_value
+o=concat1_1 a b
+o_not=concat1_1 a_not b_not
+
+
+
+deselectorChainP<SIZEP=2...24>_P0_internal:
+
+o: out <2**SIZEP>
+o_not: out <2**SIZEP>
+
+i_index_not: in <SIZEP>
+i_index: in <SIZEP>
+i_value: in
+
+va vb va_not vb_not=deselectorP0 i_index_not[<SIZEP-1>] i_index[<SIZEP-1>] i_value
+a a_not=deselectorChainP<SIZEP-1>_P0_internal i_index_not[0:<SIZEP-1>] i_index[0:<SIZEP-1>] va
+b b_not=deselectorChainP<SIZEP-1>_P0_internal i_index_not[0:<SIZEP-1>] i_index[0:<SIZEP-1>] vb
+o=concat<2**SIZEP/2>_<2**SIZEP/2> a b
+o_not=concat<2**SIZEP/2>_<2**SIZEP/2> a_not b_not
+
+
+
+deselectorChainP<SIZEP=1...24>_P<WP=1...22>_internal:
+<?(WP<SIZEP)>
+
+o: out <2**SIZEP>
+o_not: out <2**SIZEP>
+
+i_index_not: in <SIZEP-WP>
+i_index: in <SIZEP-WP>
+i_value: in <2**WP>
+
+a a_not=deselectorChainP<SIZEP-1>_P<WP-1>_internal i_index_not i_index i_value[0:<2**WP/2>]
+b b_not=deselectorChainP<SIZEP-1>_P<WP-1>_internal i_index_not i_index i_value[<2**WP/2>:<2**WP>]
+o=concat<2**SIZEP/2>_<2**SIZEP/2> a b
+o_not=concat<2**SIZEP/2>_<2**SIZEP/2> a_not b_not
+
+
+
+deselectorChainP<SIZEP=1...24>_P<WP=0...22>:
+<?(WP<SIZEP)>
+
+o: out <2**SIZEP>
+o_not: out <2**SIZEP>
+
+i_index_not: in <SIZEP-WP>
+i_index: in <SIZEP-WP>
+i_value: in <2**WP>
+
+_o _o_not=deselectorChainP<SIZEP>_P<WP>_internal i_index_not i_index i_value
+o=bitTransposeP<SIZEP>_wordP<SIZEP-WP> _o
+o_not=bitTransposeP<SIZEP>_wordP<SIZEP-WP> _o_not
+
+
+
+arrayIndexReadP<SIZEP=1...24>_P<RP=0...22>:
+<?(RP<SIZEP)>
+
+o: out <2**RP>
+
+i_array: in <2**SIZEP>
+i_index: in <SIZEP-RP>
+
+index_not=not<SIZEP-RP> i_index
+o=selectorChainP<SIZEP>_P<RP> index_not i_index i_array
+
+
+
+arrayIndexWriteP<SIZEP=1...24>_P<WP=0...22>:
+<?(WP<SIZEP)>
+
+o_write_value: out <2**SIZEP>
+o_write_value_not: out <2**SIZEP>
+o_write_mask: out <2**SIZEP>
+o_write_mask_not: out <2**SIZEP>
+
+i_write_index: in <SIZEP-WP>
+i_write_mask: in <2**WP>
+i_write_value: in <2**WP>
+
+write_index_not=not<SIZEP-WP> i_write_index
+
+o_write_mask o_write_mask_not=deselectorChainP<SIZEP>_P<WP> write_index_not i_write_index i_write_mask
+o_write_value o_write_value_not=deselectorChainP<SIZEP>_P<WP> write_index_not i_write_index i_write_value
+
+
+
+addressableMemoryP<SIZEP=1...24>_P<RP=0...22>_P<WP=0...22>:
+<?(RP<SIZEP)>
+<?(WP<SIZEP)>
+
+o_read_value: out <2**RP>
+
+i_read_address: in <SIZEP-RP>
+i_write_mask: in <2**WP>
+i_write_address: in <SIZEP-WP>
+i_write_value: in <2**WP>
+
+memory: reg <2**SIZEP>
+
+o_read_value=arrayIndexReadP<SIZEP>_P<RP> memory i_read_address
+
+write_value write_value_not write_mask write_mask_not=arrayIndexWriteP<SIZEP>_P<WP> i_write_address i_write_mask i_write_value
+
+memory=selectorP<SIZEP> write_mask_not write_mask memory write_value
+
+
+
+twiceAddressableMemoryP<SIZEP=1...24>_P<RP=0...22>_P<WP=0...22>:
+<?(RP<SIZEP)>
+<?(WP<SIZEP)>
+
+o_read_value_a: out <2**RP>
+o_read_value_b: out <2**RP>
+
+i_read_address_a: in <SIZEP-RP>
+i_read_address_b: in <SIZEP-RP>
+i_write_mask_a: in <2**WP>
+i_write_mask_b: in <2**WP>
+i_write_address_a: in <SIZEP-WP>
+i_write_address_b: in <SIZEP-WP>
+i_write_value_a: in <2**WP>
+i_write_value_b: in <2**WP>
+
+memory: reg <2**SIZEP>
+
+o_read_value_a=arrayIndexReadP<SIZEP>_P<RP> memory i_read_address_a
+o_read_value_b=arrayIndexReadP<SIZEP>_P<RP> memory i_read_address_b
+
+write_value_input_a=andP<WP> i_write_mask_a i_write_value_a
+write_value_input_b=andP<WP> i_write_mask_b i_write_value_b
+
+write_value_a write_value_a_not write_mask_a write_mask_a_not=arrayIndexWriteP<SIZEP>_P<WP> i_write_address_a i_write_mask_a write_value_input_a
+write_value_b write_value_b_not write_mask_b write_mask_b_not=arrayIndexWriteP<SIZEP>_P<WP> i_write_address_b i_write_mask_b write_value_input_b
+
+write_mask write_mask_not=ornor_negInputsP<SIZEP> write_mask_a_not write_mask_b_not
+write_value write_value_not=ornor_negInputsP<SIZEP> write_value_a_not write_value_b_not
+
+memory=selectorP<SIZEP> write_mask_not write_mask memory write_value
+
+
+
+wordPairAddressableMemoryP<SIZEP=1...24>_P<RP=0...22>_P<WP=0...22>:
+<?(RP<SIZEP)>
+<?(WP<SIZEP)>
+
+o_read_value: out <2**RP*2>
+
+i_read_address: in <SIZEP-RP>
+i_write_mask: in <2**WP*2>
+i_write_address: in <SIZEP-WP>
+i_write_value: in <2**WP*2>
+
+read_address_b _=inc<SIZEP-RP> i_read_address 1
+write_address_b _=inc<SIZEP-WP> i_write_address 1
+
+write_a_mask=set<2**WP> i_write_mask[0:<2**WP>]
+write_b_mask=set<2**WP> i_write_mask[<2**WP>:<2**WP*2>]
+write_a=set<2**WP> i_write_value[0:<2**WP>]
+write_b=set<2**WP> i_write_value[<2**WP>:<2**WP*2>]
+oa ob=twiceAddressableMemoryP<SIZEP>_P<RP>_P<WP> i_read_address read_address_b write_a_mask write_b_mask i_write_address write_address_b write_a write_b
+o_read_value=concat<2**RP>_<2**RP> oa ob
+
+
+
+wordShiftLeftP<SHIFTP=0...23>_P<SIZEP=1...24>:
+<?(SHIFTP<SIZEP)>
+
+o: out <2**SIZEP>
+
+i: in <2**SIZEP>
+
+o=concat<2**SHIFTP>_<2**SIZEP-2**SHIFTP> 0 i[0:<2**SIZEP-2**SHIFTP>]
+
+
+
+wordShiftRightP<SHIFTP=0...23>_P<SIZEP=1...24>:
+<?(SHIFTP<SIZEP)>
+
+o: out <2**SIZEP>
+
+i: in <2**SIZEP>
+
+o=concat<2**SIZEP-2**SHIFTP>_<2**SHIFTP> i[<2**SHIFTP>:<2**SIZEP>] 0
+
+
+
+wordShift<DIR=Left,Right>N_P<SIZEP=1...24>_wordP0_internal_step0:
+
+o: out <2**SIZEP>
+
+i_value: in <2**SIZEP>
+i_shift: in <SIZEP>
+i_shift_not: in <SIZEP>
+
+o=set<2**SIZEP> i_value
+
+
+
+wordShift<DIR=Left,Right>N_P<SIZEP=1...24>_wordP0_internal_step<STEP=1...24>:
+<?(STEP<=SIZEP)>
+
+o: out <2**SIZEP>
+
+i_value: in <2**SIZEP>
+i_shift: in <SIZEP>
+i_shift_not: in <SIZEP>
+
+a=wordShift<DIR>N_P<SIZEP>_wordP0_internal_step<STEP-1> i_value i_shift i_shift_not
+b=wordShift<DIR>P<STEP-1>_P<SIZEP> a
+shift_fannedOut=fanOutP<SIZEP> i_shift[<STEP-1>]
+shift_fannedOut_not=fanOutP<SIZEP> i_shift_not[<STEP-1>]
+o=selectorP<SIZEP> shift_fannedOut_not shift_fannedOut a b
+
+
+
+wordShift<DIR=Left,Right>N_P<SIZEP=1...24>_wordP0_internal:
+
+o: out <2**SIZEP>
+
+i_value: in <2**SIZEP>
+i_shift: in <SIZEP>
+i_shift_not: in <SIZEP>
+
+o=wordShift<DIR>N_P<SIZEP>_wordP0_internal_step<SIZEP> i_value i_shift i_shift_not
+
+
+
+wordShift<DIR=Left,Right>N_P<SIZEP=1...24>_wordP<WORDP=1...6>_internal:
+<?(SIZEP+WORDP<=24)>
+
+o: out <2**(SIZEP+WORDP)>
+
+i_value: in <2**(SIZEP+WORDP)>
+i_shift: in <SIZEP>
+i_shift_not: in <SIZEP>
+
+a=wordShift<DIR>N_P<SIZEP>_wordP<WORDP-1>_internal i_value[0:<2**(SIZEP+WORDP-1)>] i_shift i_shift_not
+b=wordShift<DIR>N_P<SIZEP>_wordP<WORDP-1>_internal i_value[<2**(SIZEP+WORDP-1)>:<2**(SIZEP+WORDP)>] i_shift i_shift_not
+o=concat<2**(SIZEP+WORDP-1)>_<2**(SIZEP+WORDP-1)> a b
+
+
+
+wordShift<DIR=Left,Right>N_P<SIZEP=1...24>_wordP<WORDP=0...6>:
+<?(SIZEP+WORDP<=24)>
+
+o: out <2**(SIZEP+WORDP)>
+
+i_value: in <2**(SIZEP+WORDP)>
+i_shift: in <SIZEP>
+
+shift_not=not<SIZEP> i_shift
+value=bitTransposeP<SIZEP+WORDP>_wordP<WORDP> i_value
+_o=wordShift<DIR>N_P<SIZEP>_wordP<WORDP>_internal value i_shift shift_not
+o=bitTransposeP<SIZEP+WORDP>_wordP<SIZEP> _o
+
+
+
+multipleConsecutiveWordAddressableMemoryP<SIZEP=1...24>_P<WORDP=0...6>_readP<RCP=1...6>_writeP<WCP=1...6>:
+<?(WORDP+RCP<SIZEP)>
+<?(WORDP+WCP<SIZEP)>
+
+o_read_value: out <2**(WORDP+RCP)>
+
+i_read_address: in <SIZEP-WORDP>
+i_write_mask: in <2**(WORDP+WCP)>
+i_write_address: in <SIZEP-WORDP>
+i_write_value: in <2**(WORDP+WCP)>
+
+write_address_for_shift=concat<WCP>_1 i_write_address[0:<WCP>] 0
+
+write_mask_pre_shift=concat<2**(WORDP+WCP)>_<2**(WORDP+WCP)> i_write_mask 0
+write_mask=wordShiftLeftN_P<WCP+1>_wordP<WORDP> write_mask_pre_shift write_address_for_shift
+
+write_value_pre_shift=concat<2**(WORDP+WCP)>_<2**(WORDP+WCP)> i_write_value 0
+write_value=wordShiftLeftN_P<WCP+1>_wordP<WORDP> write_value_pre_shift write_address_for_shift
+
+read_value_pre_shift=wordPairAddressableMemoryP<SIZEP>_P<WORDP+RCP>_P<WORDP+WCP> i_read_address[<RCP>:<SIZEP-WORDP>] write_mask i_write_address[<WCP>:<SIZEP-WORDP>] write_value
+
+read_address_for_shift=concat<RCP>_1 i_read_address[0:<RCP>] 0
+
+read_value=wordShiftRightN_P<RCP+1>_wordP<WORDP> read_value_pre_shift read_address_for_shift
+o_read_value=set<2**(WORDP+RCP)> read_value[0:<2**(WORDP+RCP)>]
+
+
+
+addressableMemoryConsecutiveWords<ADDRESS=1...16>_<WORD=1,2,4,8,16>_<SEQ=2,4,8,16>:
+<?(2**ADDRESS>SEQ*2)>
 
 output: out <WORD*SEQ>
 
-addressForOutput: in <ADDRESS>
-writeMaskForInput: in <SEQ>
-addressForInput: in <ADDRESS>
+output_address: in <ADDRESS>
+input_writeMask: in <SEQ>
+input_address: in <ADDRESS>
 input: in <WORD*SEQ>
 
-_output_a=addressableMemoryConsecutiveWords<ADDRESS>_<WORD/2>_<SEQ> addressForOutput writeMaskForInput addressForInput input[0:<WORD*SEQ/2>]
-_output_b=addressableMemoryConsecutiveWords<ADDRESS>_<WORD/2>_<SEQ> addressForOutput writeMaskForInput addressForInput input[<WORD*SEQ/2>:<WORD*SEQ>]
-output=concat<WORD/2*SEQ>_<WORD/2*SEQ> _output_a _output_b
+writeMask=fanOutBitwiseP<log2(WORD)>_P<log2(SEQ)> input_writeMask
+output=multipleConsecutiveWordAddressableMemoryP<ADDRESS+log2(WORD)>_P<log2(WORD)>_readP<log2(SEQ)>_writeP<log2(SEQ)> output_address writeMask input_address input
 
 
 
-computerB<ADDRESS=5...16>:
+bitsSetUntil1:
+
+o: out 2
+
+i: in
+
+o=concat1_1 i 0
+
+
+
+bitsSetUntil<S=2...16>:
+
+o: out <2**S>
+
+i: in <S>
+
+a=bitsSetUntil<S-1> i[0:<S-1>]
+allOnes=fanOutP<S-1> 1
+oa=ternaryOperatorP<S-1> i[<S-1>] a allOnes
+ob=ternaryOperatorP<S-1> i[<S-1>] 0 a
+o=concat<2**S/2>_<2**S/2> oa ob
+
+
+
+addConditionalValue<S=1...16>:
+
+o: out <S>
+
+a: in <S>
+condition: in
+b1: in <S>
+b2: in <S>
+
+b=chooseAB<S> condition b1 b2
+o _=add<S> a b 0
+
+
+
+concatABC<S=1...32>:
+
+o: out <S*3>
+
+a: in <S>
+b: in <S>
+c: in <S>
+
+r=concat<S>_<S> a b
+o=concat<S*2>_<S> r c
+
+
+
+arrayReadElementByIndexP1_<WORD=1,2,4,8,16>:
+
+o: out <WORD>
+
+i_array: in <WORD*2>
+i_index: in
+
+o=chooseAB<WORD> i_index i_array[0:<WORD>] i_array[<WORD>:<WORD*2>]
+
+
+
+arrayReadElementByIndexP<SIZEP=2...16>_<WORD=1,2,4,8,16>:
+
+o: out <WORD>
+
+i_array: in <2**SIZEP*WORD>
+i_index: in <SIZEP>
+
+oa=arrayReadElementByIndexP<SIZEP-1>_<WORD> i_array[0:<2**SIZEP*WORD/2>] i_index[0:<SIZEP-1>]
+ob=arrayReadElementByIndexP<SIZEP-1>_<WORD> i_array[<2**SIZEP*WORD/2>:<2**SIZEP*WORD>] i_index[0:<SIZEP-1>]
+o=chooseAB<WORD> i_index[<SIZEP-1>] oa ob
+
+
+
+decodeParameter:
+
+w: out
+r: out
+m: out
+value: out 16
+
+bytesValid: in
+bytes: in 24
+
+_w=set bytes[7]
+_r=set bytes[6]
+_m=set bytes[5]
+_value_short=concat5_11 bytes[0:5] 0
+_value_long=set16 bytes[8:24]
+
+_value=chooseAB16 _w _value_short _value_long
+
+w=chooseAB1 bytesValid 0 _w
+r=chooseAB1 bytesValid 0 _r
+m=chooseAB1 bytesValid 0 _m
+value=chooseAB16 bytesValid 0 _value
+
+
+
+decodeInstruction</B=8></E=16></MAX=24>:
+
+o_instructionLength: out 16
+o_instructionValid: out
+o_parameterA_isOutput: out
+o_opcode: out 8
+o_parameters_R: out 8
+o_parameters_M: out 8
+o_parameterA: out 16
+o_parameterB: out 16
+o_parameterC: out 16
+
+i_bytes: in 128
+
+bytes=set128 i_bytes
+
+opcode=set8 bytes[0:8]
+opcodeValid=getOpcodeValid opcode
+parameterCount=getOpcodeParameterCount opcodeValid opcode
+
+parameters=bitsSetUntil2 parameterCount[0:2]
+
+
+parameterA_bytes=set24 bytes[8:<8+MAX>]
+parameterA_W parameterA_R parameterA_M parameterA_value=decodeParameter parameters[0] parameterA_bytes
+
+parameterB_bytes=chooseAB24 parameterA_W bytes[<8+B>:<8+B+MAX>] bytes[<8+B+E>:<8+B+E+MAX>]
+parameterB_W parameterB_R parameterB_M parameterB_value=decodeParameter parameters[1] parameterB_bytes
+
+_justOneParameterW=xor parameterA_W parameterB_W
+_bothParametersW=and parameterA_W parameterB_W
+_parameterC_bytes_a=chooseAB24 _justOneParameterW bytes[<8+B*2>:<8+B*2+MAX>] bytes[<8+B*2+E>:<8+B*2+E+MAX>]
+parameterC_bytes=chooseAB24 _bothParametersW _parameterC_bytes_a bytes[<8+B*2+E*2>:<8+B*2+E*2+MAX>]
+parameterC_W parameterC_R parameterC_M parameterC_value=decodeParameter parameters[2] parameterC_bytes
+
+
+_instructionLength_opcode_and_parameters _=inc4 parameterCount[0:4] 1
+
+_w_count_0=concat1_3 parameterA_W 0
+_w_count_1 _=inc4 _w_count_0 parameterB_W
+_w_count _=inc4 _w_count_1 parameterC_W
+
+_w_bytes _=bitShiftLeft<log2(E/8)>_4 _w_count
+
+_instructionLength _=add4 _instructionLength_opcode_and_parameters _w_bytes 0
+
+instructionLength=concat4_12 _instructionLength 0
+
+
+parameterA_isOutput=getOpcodeFirstArgumentIsOutput opcodeValid opcode
+
+_memoryInputs_B_or_C=or parameterB_M parameterC_M
+_moreThanOneMemoryInput_a=andnot _memoryInputs_B_or_C parameterA_isOutput
+moreThanOneMemoryInput=andorand parameterB_M parameterC_M parameterA_M _moreThanOneMemoryInput_a
+atMostOneMemoryInput=not moreThanOneMemoryInput
+
+parameterA_immediate=nor parameterA_R parameterA_M
+invalidOutputParameters=and parameterA_isOutput parameterA_immediate
+noInvalidOutputParameters=not invalidOutputParameters
+
+instructionValid=andABC opcodeValid atMostOneMemoryInput noInvalidOutputParameters
+
+parameters_R=concatABC1 parameterA_R parameterB_R parameterC_R
+parameters_M=concatABC1 parameterA_M parameterB_M parameterC_M
+
+o_instructionLength=set16 instructionLength
+o_instructionValid=set instructionValid
+o_parameterA_isOutput=set parameterA_isOutput
+o_opcode=set8 opcode
+o_parameters_R=concat3_5 parameters_R 0
+o_parameters_M=concat3_5 parameters_M 0
+o_parameterA=set16 parameterA_value
+o_parameterB=set16 parameterB_value
+o_parameterC=set16 parameterC_value
+
+
+
+instructionBytesRegister:
+
+o_bytes: out 128
+o_bytes_updated: out 128
+
+i_set: in
+i_bytes: in 128
+
+saved_bytes: reg 128
+
+bytes=ternaryOperatorP7 i_set saved_bytes i_bytes
+saved_bytes=set128 bytes
+
+o_bytes=set128 saved_bytes
+o_bytes_updated=set128 bytes
+
+
+
+argumentLoader:
+
+o_argument: out 16
+o_readMemory: out
+o_readMemory_address: out 16
+
+i_canLoad: in
+i_isOutput: in
+i_R: in
+i_M: in
+i_parameter: in 16
+i_registers: in 512
+i_memory: in 16
+
+saved_argument: reg 16
+
+isOutput=set i_isOutput
+isInput=not isOutput
+
+
+argument_pre_register=set16 i_parameter
+RM=and i_R i_M
+readRegister=chooseAB1 isOutput i_R RM
+readRegisterAddress=set5 argument_pre_register[0:5]
+argument_pre_memory=chooseAB16 readRegister argument_pre_register register
+
+
+register=arrayReadElementByIndexP5_16 i_registers readRegisterAddress
+
+
+readMemory=andABC i_canLoad i_M isInput
+readMemoryAddress=set16 argument_pre_memory
+
+memory=set16 i_memory
+argument=chooseAB16 readMemory argument_pre_memory memory
+
+saved_argument=chooseAB16 i_canLoad saved_argument argument
+
+o_argument=set16 saved_argument
+o_readMemory=set readMemory
+o_readMemory_address=chooseAB16 readMemory 0 readMemoryAddress
+
+
+
+argumentStorer:
+
+o_registers_write_value: out 512
+o_registers_write_mask: out 512
+o_memory_write: out
+o_memory_write_value: out 16
+o_memory_write_address: out 16
+
+i_store_enable: in
+i_value: in 16
+i_store_in_memory: in
+i_store_address: in 16
+
+
+storeInRegister=andnot i_store_enable i_store_in_memory
+register_out=chooseAB16 storeInRegister 0 i_value
+_onesFannedOut16=fanOut16 1
+register_out_mask=chooseAB16 storeInRegister 0 _onesFannedOut16
+
+bitRotation=concat4_5 0 i_store_address[0:5]
+register_out_extended=concat16_496 register_out 0
+register_out_mask_extended=concat16_496 register_out_mask 0
+
+registers_write_value=bitRotateLeftN_P9 register_out_extended bitRotation
+registers_write_mask=bitRotateLeftN_P9 register_out_mask_extended bitRotation
+
+
+memory_write=and i_store_enable i_store_in_memory
+memory_write_value=set16 i_value
+memory_write_address=set16 i_store_address
+
+o_registers_write_value=set512 registers_write_value
+o_registers_write_mask=set512 registers_write_mask
+o_memory_write=set memory_write
+o_memory_write_value=set16 memory_write_value
+o_memory_write_address=set16 memory_write_address
+
+
+
+getOpcodeNotAluJumpInstruction:
+
+isJ: out
+isJe: out
+isJne: out
+isJl: out
+isJnl: out
+isJls: out
+isJnls: out
+
+opcode: in 8
+
+isMov isJ isJe isJne isJl isJnl isJls isJnls isOut=getOpcodeNotAluInstruction opcode
+
+
+
+getOpcodeNotAluNotJumpInstruction:
+
+isMov: out
+isOut: out
+
+opcode: in 8
+
+isMov isJ isJe isJne isJl isJnl isJls isJnls isOut=getOpcodeNotAluInstruction opcode
+
+
+
+getInstructionJump:
+
+executeJump: out
+executeJump_address: out 16
+
+enable: in
+opcode: in 8
+argumentA: in 16
+argumentB: in 16
+argumentC: in 16
+
+isJ isJe isJne isJl isJnl isJls isJnls=getOpcodeNotAluJumpInstruction opcode
+
+isJumpTypeInstruction=orABCDEFG isJ isJe isJne isJl isJnl isJls isJnls
+
+_pre_acceptJe=equal16 argumentB argumentC
+_pre_acceptJne=not _pre_acceptJe
+_pre_acceptJl=lessThanUnsigned16 argumentB argumentC
+_pre_acceptJnl=not _pre_acceptJl
+_pre_acceptJls=lessThanSigned16 argumentB argumentC
+_pre_acceptJnls=not _pre_acceptJls
+
+acceptJe=and isJe _pre_acceptJe
+acceptJne=and isJne _pre_acceptJne
+acceptJl=and isJl _pre_acceptJl
+acceptJnl=and isJnl _pre_acceptJnl
+acceptJls=and isJls _pre_acceptJls
+acceptJnls=and isJnls _pre_acceptJnls
+
+acceptJump=orABCDEFG isJ acceptJe acceptJne acceptJl acceptJnl acceptJls acceptJnls
+executeJump=andABC enable isJumpTypeInstruction acceptJump
+executeJump_address=set16 argumentA
+
+
+
+computerB<ADDRESS=6...16></MSEQ=16>:
+<?(MSEQ>=10)>
 
 output: out 16
 outputEnable: out
@@ -1608,19 +2572,159 @@ outputEnable: out
 input: in 8
 inputCodeStop: in
 
+
 registers: reg 512
 
-registers=set512 registers
+registers_write_mask_not=notP9 registers_write_mask
+registers=selectorP9 registers_write_mask_not registers_write_mask registers registers_write_value
 
-readFromMemory_address=set<ADDRESS> 0
-writeToMemory_mask=set16 0
-writeToMemory_address=set<ADDRESS> 0
-writeToMemory_value=set128 0
 
-readFromMemory_value=addressableMemoryConsecutiveWords<ADDRESS>_8_16 readFromMemory_address writeToMemory_mask writeToMemory_address writeToMemory_value
+loadInputCode_address: reg 16
 
-output=set16 0
-outputEnable=set 0
+loadInputCode=not executionStarted_next
+loadInputCode_address _=inc16 loadInputCode_address loadInputCode
+loadInputCode_value16=concat8_8 input 0
+
+
+executionStarted: reg
+
+executionStarted_next=or executionStarted inputCodeStop
+executionStarted=set executionStarted_next
+
+
+executionIsGoingToStartAtNextCycle=andnot executionStarted_next executionStarted
+
+endOfInstruction=or ignoreInstruction instructionExecutionEnd
+instructionStage_moveForward=or instructionStage_decode instructionStage_loadArguments
+
+instructionStage: reg 8
+
+startInstruction=or executionIsGoingToStartAtNextCycle endOfInstruction
+instructionStage=computerStageShiftRegisterUpdate instructionStage startInstruction instructionStage_moveForward
+
+
+instructionStage_decode=and executionStarted instructionStage[0]
+instructionStage_loadArguments=and executionStarted instructionStage[1]
+instructionStage_execute=and executionStarted instructionStage[2]
+
+
+instructionBytes instructionBytesUpdated=instructionBytesRegister instructionStage_decode memoryRead_value
+
+instructionLength instructionValid _ _ _ _ _ _ _=decodeInstruction instructionBytesUpdated
+_ _ parameterA_isOutput opcode parameters_R parameters_M parameterA parameterB parameterC=decodeInstruction instructionBytes
+
+
+ignoreInstruction=andnot executionStarted instructionValid
+
+
+argumentA _memoryA _memoryA_address=argumentLoader instructionStage_loadArguments parameterA_isOutput parameters_R[0] parameters_M[0] parameterA registers memoryRead_value16
+argumentB _memoryB _memoryB_address=argumentLoader instructionStage_loadArguments 0 parameters_R[1] parameters_M[1] parameterB registers memoryRead_value16
+argumentC _memoryC _memoryC_address=argumentLoader instructionStage_loadArguments 0 parameters_R[2] parameters_M[2] parameterC registers memoryRead_value16
+
+_memoryRead=orABC _memoryA _memoryB _memoryC
+_memoryRead_address=orABC16 _memoryA_address _memoryB_address _memoryC_address
+
+
+aluOperationIndex=getOpcodeAluOperationIndex instructionValid opcode
+aluOutput=alu argumentB argumentC aluOperationIndex[0:4]
+isAluInstruction=getOpcodeUseAlu instructionValid opcode
+
+instructionOperationResult=chooseAB16 isAluInstruction argumentB aluOutput
+
+storeResult=and instructionStage_execute parameterA_isOutput
+registers_write_value registers_write_mask memory_write memory_write_value memory_write_address=argumentStorer storeResult instructionOperationResult parameters_M[0] argumentA
+
+
+executeJump executeJump_address=getInstructionJump instructionStage_execute opcode argumentA argumentB argumentC
+
+isMov isOut=getOpcodeNotAluNotJumpInstruction opcode
+
+_outputEnable=and instructionStage_execute isOut
+_output=chooseAB16 _outputEnable 0 argumentA
+
+outputEnable=set _outputEnable
+output=set16 _output
+
+
+instructionExecutionEnd=set instructionStage_execute
+
+
+nextInstructionStartAddress _=add16 codeAddressRegister instructionLength 0
+
+
+codeAddressRegister: reg 16
+
+codeAddressRegister_change=set endOfInstruction
+codeAddressRegister_change_value=chooseAB16 executeJump nextInstructionStartAddress executeJump_address
+codeAddressRegister=chooseAB16 codeAddressRegister_change codeAddressRegister codeAddressRegister_change_value
+
+
+_memoryWrite_mask2_a=chooseAB2 memory_write 0 3
+memoryWrite_mask2=chooseAB2 loadInputCode _memoryWrite_mask2_a 1
+memoryWrite_value16=chooseAB16 loadInputCode memory_write_value loadInputCode_value16
+
+memoryRead_address=chooseAB16 _memoryRead codeAddressRegister _memoryRead_address
+memoryWrite_mask=concat2_<MSEQ-2> memoryWrite_mask2 0
+memoryWrite_address=chooseAB16 loadInputCode memory_write_address loadInputCode_address
+memoryWrite_value=concat16_<8*MSEQ-16> memoryWrite_value16 0
+
+memoryRead_value=addressableMemoryConsecutiveWords<ADDRESS>_8_<MSEQ> memoryRead_address[0:<ADDRESS>] memoryWrite_mask memoryWrite_address[0:<ADDRESS>] memoryWrite_value
+
+memoryRead_value16=set16 memoryRead_value[0:16]
+
+
+
+memoryTest<ADDRESS=6...16></MSEQ=16>:
+
+output: out 16
+outputEnable: out
+
+input: in 8
+inputCodeStop: in
+
+counter: reg 16
+empty_reg: reg 48
+
+empty_reg=set48 empty_reg
+
+counter _=inc16 counter 1
+
+memoryRead_address=concat1_15 0 counter[0:15]
+memoryWrite_mask=set<MSEQ> 3
+memoryWrite_address=concat1_15 0 counter[0:15]
+memoryWrite_value=concat16_<MSEQ*8-16> counter 0
+
+memoryRead_value=addressableMemoryConsecutiveWords<ADDRESS>_8_<MSEQ> memoryRead_address[0:<ADDRESS>] memoryWrite_mask memoryWrite_address[0:<ADDRESS>] memoryWrite_value
+
+output=set16 memoryRead_value[0:16]
+outputEnable=set 1
+
+
+
+memoryTestB<ADDRESS=6...16></WORD=2>:
+
+output: out 16
+outputEnable: out
+
+input: in 8
+inputCodeStop: in
+
+counter: reg 16
+empty_reg: reg 48
+
+empty_reg=set48 empty_reg
+
+counter _=inc16 counter 1
+
+memoryRead_address=set16 counter
+memoryWrite_mask=set16 -1
+memoryWrite_address=set16 counter
+memoryWrite_value=set16 counter
+
+memoryRead_value=addressableMemoryP<ADDRESS+log2(WORD*8)>_P<log2(WORD*8)>_P<log2(WORD*8)> memoryRead_address[0:<ADDRESS>] memoryWrite_mask memoryWrite_address[0:<ADDRESS>] memoryWrite_value
+
+output=set16 memoryRead_value
+outputEnable=set 1
 
 
 
@@ -1632,4 +2736,4 @@ outputEnable: out
 input: in 8
 inputCodeStop: in
 
-output outputEnable=computer8 input inputCodeStop
+output outputEnable=computerB8 input inputCodeStop
