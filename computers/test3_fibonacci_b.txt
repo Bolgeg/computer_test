@@ -12,7 +12,9 @@ output=<NAME> input
 output: out <N>
 input: in <N>
 
-output=<NAME>*<N> input
+a=<NAME><N-1> input[0:<N-1>]
+b=<NAME>1 input[<N-1>]
+output=concat<N-1>_1 a b
 
 
 
@@ -766,23 +768,44 @@ outputRemainder=ternaryOperator<S> inputDividend[<S-1>] remainder remainderNeg
 
 
 
-fanOut<N=1...32>:
+fanOut1:
+
+output: out
+input: in
+
+output=set input
+
+
+
+fanOut<N=2...32>:
 
 output: out <N>
 
 input: in
 
-output=set<N> input*<N>
+a=fanOut<N-1> input
+output=concat<N-1>_1 a input
 
 
 
-fanOutP<N=0...24>:
+fanOutP0:
+
+output: out
+input: in
+
+output=set input
+
+
+
+fanOutP<N=1...24>:
 
 output: out <2**N>
 
 input: in
 
-output=set<2**N> input*<2**N>
+a=fanOutP<N-1> input
+b=fanOutP<N-1> input
+output=concat<2**N/2>_<2**N/2> a b
 
 
 
@@ -964,6 +987,39 @@ input: in <2**N>
 a=multiplexer<N-1> inputControl[0:<N-1>] input[0:<2**N/2>]
 b=multiplexer<N-1> inputControl[0:<N-1>] input[<2**N/2>:<2**N>]
 output=multiplexer inputControl[<N-1>] a b
+
+
+
+addressableMemory<N=2...16>_1:
+
+output: out
+
+addressForOutput: in <N>
+inputEnable: in
+addressForInput: in <N>
+input: in
+
+memory: reg <2**N>
+
+output=multiplexer<N> addressForOutput memory
+memoryChange=demultiplexer<N> addressForInput inputEnable
+inputFannedOut=fanOutP<N> input
+memory=multiplexerArrayP<N> memoryChange memory inputFannedOut
+
+
+
+addressableMemory<ADDRESS=2...16>_<WORD=2,4,8,16>:
+
+output: out <WORD>
+
+addressForOutput: in <ADDRESS>
+inputEnable: in
+addressForInput: in <ADDRESS>
+input: in <WORD>
+
+a=addressableMemory<ADDRESS>_<WORD/2> addressForOutput inputEnable addressForInput input[0:<WORD/2>]
+b=addressableMemory<ADDRESS>_<WORD/2> addressForOutput inputEnable addressForInput input[<WORD/2>:<WORD>]
+output=concat<WORD/2>_<WORD/2> a b
 
 
 
@@ -1189,8 +1245,6 @@ d=chooseABCDEFGH8 opcode[0:3] 1 0 0 0 0 0 0 0
 o=chooseABCD8 opcode[3:5] a b c d
 output=chooseAB8 valid 0 o
 
-
-
 getOpcodeNotAluInstruction:
 
 isMov: out
@@ -1214,6 +1268,316 @@ isJnl=equal8 opcode 21
 isJls=equal8 opcode 22
 isJnls=equal8 opcode 23
 isOut=equal8 opcode 24
+
+
+
+decodeParameterByte:
+
+readExtra: out
+useRegister: out
+accessMemory: out
+shortValue: out 5
+
+parameterByte: in 8
+
+readExtra=set parameterByte[7]
+useRegister=set parameterByte[6]
+accessMemory=set parameterByte[5]
+shortValue=set5 parameterByte[0:5]
+
+
+
+parameterData:
+
+useRegister: out
+accessMemory: out
+value: out 16
+
+overwriteEnable: in
+parameterByte: in 8
+parameterByteExtraA: in 8
+parameterByteExtraB: in 8
+
+useRegisterReg: reg
+accessMemoryReg: reg
+valueReg: reg 16
+
+_readExtra _useRegister _accessMemory _shortValue=decodeParameterByte parameterByte
+_shortValueExtended=concat5_11 _shortValue 0
+_longValue=concat8_8 parameterByteExtraA parameterByteExtraB
+_value=chooseAB16 _readExtra _shortValueExtended _longValue
+
+useRegister=set useRegisterReg
+accessMemory=set accessMemoryReg
+value=set16 valueReg
+
+useRegisterReg=chooseAB1 overwriteEnable useRegisterReg _useRegister
+accessMemoryReg=chooseAB1 overwriteEnable accessMemoryReg _accessMemory
+valueReg=chooseAB16 overwriteEnable valueReg _value
+
+
+
+chooseBitSetABC<S=1...16>:
+
+output: out <S>
+
+inputControl: in 8
+inputA: in <S>
+inputB: in <S>
+inputC: in <S>
+
+a=chooseAB<S> inputControl[0] 0 inputA
+b=chooseAB<S> inputControl[1] a inputB
+output=chooseAB<S> inputControl[2] b inputC
+
+
+
+computer<ADDRESS=4...16>:
+
+output: out 16
+outputEnable: out
+
+input: in 8
+inputCodeStop: in
+
+started: reg
+copyCode_counter: reg 16
+executionStarted: reg
+
+started=set 1
+_nextExecutionStarted=or executionStarted inputCodeStop
+executionStarted=set _nextExecutionStarted
+executionIsGoingToStartAtNextCycle=andnot _nextExecutionStarted executionStarted
+
+copyCode=nor executionStarted inputCodeStop
+copyCode_counter _=inc16 copyCode_counter copyCode
+
+
+codeAddressRegister: reg 16
+
+instructionStage: reg 8
+instructionStage_step: reg 8
+instructionStage_substep: reg 8
+instructionStage_subsubstep: reg 8
+
+
+startInstruction=or executionIsGoingToStartAtNextCycle endOfInstruction
+instructionStage=computerStageShiftRegisterUpdate instructionStage startInstruction instructionStage_moveForward
+
+_startInstructionStep=or startInstruction instructionStage_moveForward
+instructionStage_step=computerStageShiftRegisterUpdate instructionStage_step _startInstructionStep instructionStage_step_moveForward
+
+_startInstructionSubstep=orABC startInstruction instructionStage_moveForward instructionStage_step_moveForward
+instructionStage_substep=computerStageShiftRegisterUpdate instructionStage_substep _startInstructionSubstep instructionStage_substep_moveForward
+
+_startInstructionSubsubstep=orABCD startInstruction instructionStage_moveForward instructionStage_step_moveForward instructionStage_substep_moveForward
+instructionStage_subsubstep=computerStageShiftRegisterUpdate instructionStage_subsubstep _startInstructionSubsubstep instructionStage_subsubstep_moveForward
+
+
+instructionStage_readOpcode=and executionStarted instructionStage[0]
+instructionStage_readArguments=and executionStarted instructionStage[1]
+instructionStage_execute=and executionStarted instructionStage[2]
+
+instructionStage_currentArgument=chooseAB8 instructionStage_readArguments 0 instructionStage_step
+
+instructionStage_readParameter=and instructionStage_readArguments instructionStage_substep[0]
+instructionStage_readArgument=and instructionStage_readArguments instructionStage_substep[1]
+
+instructionStage_readParameter_byte=and instructionStage_readParameter instructionStage_subsubstep[0]
+instructionStage_readParameter_byteExtraA=and instructionStage_readParameter instructionStage_subsubstep[1]
+instructionStage_readParameter_byteExtraB=and instructionStage_readParameter instructionStage_subsubstep[2]
+
+instructionStage_readArgument_firstByte=and instructionStage_readArgument instructionStage_subsubstep[0]
+instructionStage_readArgument_secondByte=and instructionStage_readArgument instructionStage_subsubstep[1]
+
+instructionStage_execute_writeOutput_firstByte=andABC instructionStage_execute firstArgumentIsMemoryOutput instructionStage_step[0]
+instructionStage_execute_writeOutput_secondByte=andABC instructionStage_execute firstArgumentIsMemoryOutput instructionStage_step[1]
+
+
+opcodeByte: reg 8
+parameterByte: reg 8
+parameterByteExtraA: reg 8
+parameterByteExtraB: reg 8
+
+opcodeValid=getOpcodeValid opcodeByte
+
+parameterCount=getOpcodeParameterCount opcodeValid opcodeByte
+
+firstArgumentIsOutput=getOpcodeFirstArgumentIsOutput opcodeValid opcodeByte
+currentArgumentIsOutput=and instructionStage_currentArgument[0] firstArgumentIsOutput
+
+_endOfParameters_bits=decoder3 parameterCount[0:3]
+_endOfParameters_a=and _endOfParameters_bits[0] instructionStage_readOpcode
+_endOfParameters_bits_shifted _=bitShiftRightUnsigned1_8 _endOfParameters_bits
+_endOfParameters_b=equal8 _endOfParameters_bits_shifted instructionStage_currentArgument
+_endOfParameters_c=and instructionStage_step_moveForward _endOfParameters_b
+endOfParameters=or _endOfParameters_a _endOfParameters_c
+
+opcodeByte=chooseAB8 instructionStage_readOpcode opcodeByte readFromMemory_value
+parameterByte=chooseAB8 instructionStage_readParameter_byte parameterByte readFromMemory_value
+parameterByteExtraA=chooseAB8 instructionStage_readParameter_byteExtraA parameterByteExtraA readFromMemory_value
+parameterByteExtraB=chooseAB8 instructionStage_readParameter_byteExtraB parameterByteExtraB readFromMemory_value
+
+parameterByte_updatedAOT=chooseAB8 instructionStage_readParameter_byte parameterByte readFromMemory_value
+parameterByteExtraA_updatedAOT=chooseAB8 instructionStage_readParameter_byteExtraA parameterByteExtraA readFromMemory_value
+parameterByteExtraB_updatedAOT=chooseAB8 instructionStage_readParameter_byteExtraB parameterByteExtraB readFromMemory_value
+
+
+parameter_readExtra _ _ _=decodeParameterByte parameterByte_updatedAOT
+_parameter_read_end_a=andnot instructionStage_readParameter_byte parameter_readExtra
+parameter_read_end=or _parameter_read_end_a instructionStage_readParameter_byteExtraB
+
+
+_parameter_read_end_A=and parameter_read_end instructionStage_currentArgument[0]
+parameterA_useRegister parameterA_accessMemory parameterA_value=parameterData _parameter_read_end_A parameterByte_updatedAOT parameterByteExtraA_updatedAOT parameterByteExtraB_updatedAOT
+
+_parameter_read_end_B=and parameter_read_end instructionStage_currentArgument[1]
+parameterB_useRegister parameterB_accessMemory parameterB_value=parameterData _parameter_read_end_B parameterByte_updatedAOT parameterByteExtraA_updatedAOT parameterByteExtraB_updatedAOT
+
+_parameter_read_end_C=and parameter_read_end instructionStage_currentArgument[2]
+parameterC_useRegister parameterC_accessMemory parameterC_value=parameterData _parameter_read_end_C parameterByte_updatedAOT parameterByteExtraA_updatedAOT parameterByteExtraB_updatedAOT
+
+
+argumentA: reg 16
+argumentB: reg 16
+argumentC: reg 16
+
+_argumentA_writeEnable=and instructionStage_readArgument_end instructionStage_currentArgument[0]
+argumentA=chooseAB16 _argumentA_writeEnable argumentA argumentValueRead
+
+_argumentB_writeEnable=and instructionStage_readArgument_end instructionStage_currentArgument[1]
+argumentB=chooseAB16 _argumentB_writeEnable argumentB argumentValueRead
+
+_argumentC_writeEnable=and instructionStage_readArgument_end instructionStage_currentArgument[2]
+argumentC=chooseAB16 _argumentC_writeEnable argumentC argumentValueRead
+
+currentParameter_useRegister=chooseBitSetABC1 instructionStage_currentArgument parameterA_useRegister parameterB_useRegister parameterC_useRegister
+currentParameter_accessMemory=chooseBitSetABC1 instructionStage_currentArgument parameterA_accessMemory parameterB_accessMemory parameterC_accessMemory
+currentParameter_value=chooseBitSetABC16 instructionStage_currentArgument parameterA_value parameterB_value parameterC_value
+
+
+_currentParameter_useRegister_final_a=nand firstArgumentIsOutput firstArgumentIsMemoryOutput_not
+_currentParameter_useRegister_final_b=chooseAB1 instructionStage_currentArgument[0] 1 _currentParameter_useRegister_final_a
+currentParameter_useRegister_final=andABC instructionStage_readArgument currentParameter_useRegister _currentParameter_useRegister_final_b
+
+_currentParameter_accessMemory_final_a=not firstArgumentIsOutput
+_currentParameter_accessMemory_final_b=chooseAB1 instructionStage_currentArgument[0] 1 _currentParameter_accessMemory_final_a
+currentParameter_accessMemory_final=andABC instructionStage_readArgument currentParameter_accessMemory _currentParameter_accessMemory_final_b
+
+
+argumentReadFromMemoryFirstByte: reg 8
+
+
+_argumentValueRead_pre_register=set16 currentParameter_value
+
+currentParameter_useRegister_address=set16 _argumentValueRead_pre_register
+_argumentValueRead_pre_memory=chooseAB16 currentParameter_useRegister_final _argumentValueRead_pre_register readFromRegister_value
+
+currentParameter_accessMemory_address _=inc16 _argumentValueRead_pre_memory instructionStage_readArgument_secondByte
+argumentReadFromMemoryFirstByte=chooseAB8 instructionStage_readArgument_firstByte argumentReadFromMemoryFirstByte readFromMemory_value
+_argumentValueRead_fromMemoryFull=concat8_8 argumentReadFromMemoryFirstByte readFromMemory_value
+argumentValueRead=chooseAB16 currentParameter_accessMemory_final _argumentValueRead_pre_memory _argumentValueRead_fromMemoryFull
+
+_currentParameter_accessMemory_not=not currentParameter_accessMemory
+_instructionStage_readArgument_end_a=or _currentParameter_accessMemory_not instructionStage_readArgument_secondByte
+instructionStage_readArgument_end=and instructionStage_readArgument _instructionStage_readArgument_end_a
+
+
+_ignoreInstruction_a=nor parameterA_useRegister parameterA_accessMemory
+_ignoreInstruction_b=and firstArgumentIsOutput _ignoreInstruction_a
+_opcodeValid_not=not opcodeValid
+ignoreInstruction=or _opcodeValid_not _ignoreInstruction_b
+
+
+firstArgumentIsMemoryOutput=and firstArgumentIsOutput parameterA_accessMemory
+firstArgumentIsMemoryOutput_not=not firstArgumentIsMemoryOutput
+
+
+instructionOutputValueSecondByte: reg 8
+
+
+useAlu=getOpcodeUseAlu opcodeValid opcodeByte
+aluOperationIndex=getOpcodeAluOperationIndex opcodeValid opcodeByte
+aluOutput=alu argumentB argumentC aluOperationIndex
+
+instructionOutputValue=chooseAB16 useAlu argumentB aluOutput
+
+
+isMov isJ isJe isJne isJl isJnl isJls isJnls isOut=getOpcodeNotAluInstruction opcodeByte
+
+isJumpTypeInstruction=orABCDEFG isJ isJe isJne isJl isJnl isJls isJnls
+
+_pre_acceptJe=equal16 argumentB argumentC
+_pre_acceptJne=not _pre_acceptJe
+_pre_acceptJl=lessThanUnsigned16 argumentB argumentC
+_pre_acceptJnl=not _pre_acceptJl
+_pre_acceptJls=lessThanSigned16 argumentB argumentC
+_pre_acceptJnls=not _pre_acceptJls
+
+acceptJe=and isJe _pre_acceptJe
+acceptJne=and isJne _pre_acceptJne
+acceptJl=and isJl _pre_acceptJl
+acceptJnl=and isJnl _pre_acceptJnl
+acceptJls=and isJls _pre_acceptJls
+acceptJnls=and isJnls _pre_acceptJnls
+
+acceptJump=orABCDEFG isJ acceptJe acceptJne acceptJl acceptJnl acceptJls acceptJnls
+executeJump=andABC instructionStage_execute isJumpTypeInstruction acceptJump
+executeJump_address=set16 argumentA
+
+putOutput=and instructionStage_execute isOut
+putOutput_value=set16 argumentA
+
+
+instructionOutputValue_toRegister=andABC instructionExecutionEnd firstArgumentIsOutput firstArgumentIsMemoryOutput_not
+instructionOutputValue_toRegister_address=set16 argumentA
+instructionOutputValue_toRegister_value=set16 instructionOutputValue
+
+instructionOutputValueSecondByte=chooseAB8 instructionStage_execute_writeOutput_firstByte instructionOutputValueSecondByte instructionOutputValue[8:16]
+
+instructionOutputValue_toMemory=or instructionStage_execute_writeOutput_firstByte instructionStage_execute_writeOutput_secondByte
+instructionOutputValue_toMemory_address _=inc16 argumentA instructionStage_execute_writeOutput_secondByte
+instructionOutputValue_toMemory_value=chooseAB8 instructionStage_execute_writeOutput_secondByte instructionOutputValue[0:8] instructionOutputValueSecondByte
+
+
+_instructionExecutionEnd_a=and instructionStage_execute firstArgumentIsMemoryOutput_not
+instructionExecutionEnd=or instructionStage_execute_writeOutput_secondByte _instructionExecutionEnd_a
+
+
+_endOfInstruction_a=and endOfParameters ignoreInstruction
+endOfInstruction=or _endOfInstruction_a instructionExecutionEnd
+instructionStage_moveForward=or instructionStage_readOpcode endOfParameters
+instructionStage_step_moveForward=or instructionStage_readArgument_end instructionStage_execute
+instructionStage_substep_moveForward=set parameter_read_end
+instructionStage_subsubstep_moveForward=set instructionStage_readArguments
+
+pauseCodeAddressRegister=or instructionStage_execute instructionStage_readArgument
+pauseCodeAddressRegister_not=not pauseCodeAddressRegister
+
+codeAddressRegister_moveForward=and pauseCodeAddressRegister_not executionStarted
+
+_codeAddressRegister_inc _=inc16 codeAddressRegister 1
+codeAddressRegister_pre_jump=chooseAB16 codeAddressRegister_moveForward codeAddressRegister _codeAddressRegister_inc
+codeAddressRegister=chooseAB16 executeJump codeAddressRegister_pre_jump executeJump_address
+
+
+readFromMemory_address=chooseAB<ADDRESS> currentParameter_accessMemory_final codeAddressRegister[0:<ADDRESS>] currentParameter_accessMemory_address[0:<ADDRESS>]
+writeToMemory_enable=or copyCode instructionOutputValue_toMemory
+writeToMemory_address=chooseAB<ADDRESS> instructionOutputValue_toMemory copyCode_counter[0:<ADDRESS>] instructionOutputValue_toMemory_address[0:<ADDRESS>]
+writeToMemory_value=chooseAB8 instructionOutputValue_toMemory input instructionOutputValue_toMemory_value
+
+readFromMemory_value=addressableMemory<ADDRESS>_8 readFromMemory_address writeToMemory_enable writeToMemory_address writeToMemory_value
+
+
+readFromRegister_address=chooseAB5 currentParameter_useRegister_final 0 currentParameter_useRegister_address[0:5]
+writeToRegister_enable=set instructionOutputValue_toRegister
+writeToRegister_address=set5 instructionOutputValue_toRegister_address[0:5]
+writeToRegister_value=set16 instructionOutputValue_toRegister_value
+
+readFromRegister_value=addressableMemory5_16 readFromRegister_address writeToRegister_enable writeToRegister_address writeToRegister_value
+
+output=chooseAB16 putOutput 0 putOutput_value
+outputEnable=set putOutput
 
 
 
@@ -1415,19 +1779,58 @@ i_b_not: in <2**SIZEP>
 
 a a_not=ornor_negInputsP<SIZEP-1> i_a_not[0:<2**SIZEP/2>] i_b_not[0:<2**SIZEP/2>]
 b b_not=ornor_negInputsP<SIZEP-1> i_a_not[<2**SIZEP/2>:<2**SIZEP>] i_b_not[<2**SIZEP/2>:<2**SIZEP>]
-o_or=set<2**SIZEP> a+b
-o_nor=set<2**SIZEP> a_not+b_not
+o_or=concat<2**SIZEP/2>_<2**SIZEP/2> a b
+o_nor=concat<2**SIZEP/2>_<2**SIZEP/2> a_not b_not
+
+
+
+bitInterleaveP<SIZEP=0...24>_wordP<IWORDP=0...24>:
+<?(IWORDP==SIZEP)>
+
+o: out <2**SIZEP*2>
+
+i_a: in <2**SIZEP>
+i_b: in <2**SIZEP>
+
+o=concat<2**SIZEP>_<2**SIZEP> i_a i_b
+
+
+
+bitInterleaveP<SIZEP=0...24>_wordP<IWORDP=0...24>:
+<?(IWORDP<SIZEP)>
+
+o: out <2**SIZEP*2>
+
+i_a: in <2**SIZEP>
+i_b: in <2**SIZEP>
+
+a=bitInterleaveP<SIZEP-1>_wordP<IWORDP> i_a[0:<2**SIZEP/2>] i_b[0:<2**SIZEP/2>]
+b=bitInterleaveP<SIZEP-1>_wordP<IWORDP> i_a[<2**SIZEP/2>:<2**SIZEP>] i_b[<2**SIZEP/2>:<2**SIZEP>]
+o=concat<2**SIZEP>_<2**SIZEP> a b
 
 
 
 bitTransposeP<SIZEP=0...24>_wordP<IWORDP=0...24>:
-<?(IWORDP<=SIZEP)>
+<?(IWORDP==SIZEP)>
 
 o: out <2**SIZEP>
 
 i: in <2**SIZEP>
 
-o=set<2**SIZEP> i%<2**IWORDP>
+o=set<2**SIZEP> i
+
+
+
+bitTransposeP<SIZEP=0...24>_wordP<IWORDP=0...24>:
+<?(IWORDP<SIZEP)>
+
+o: out <2**SIZEP>
+
+i: in <2**SIZEP>
+
+a=bitTransposeP<SIZEP-1>_wordP<IWORDP> i[0:<2**SIZEP/2>]
+b=bitTransposeP<SIZEP-1>_wordP<IWORDP> i[<2**SIZEP/2>:<2**SIZEP>]
+o=bitInterleaveP<SIZEP-1>_wordP<SIZEP-IWORDP-1> a b
 
 
 

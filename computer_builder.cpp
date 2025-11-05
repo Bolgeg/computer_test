@@ -511,9 +511,32 @@ class ComputerBuilder
 					return *this;
 				}
 			};
+			
+			template <class T>
+			class Container
+			{
+				private:
+					vector<T> elementVector;
+				public:
+				
+				Container()
+				{
+					elementVector=vector<T>(1);
+				}
+				T& access()
+				{
+					return elementVector[0];
+				}
+				T get() const
+				{
+					return elementVector[0];
+				}
+			};
+			
+			class InputExpression;
+			
+			static constexpr int maximumVariableSizeInBits=(1<<30);
 		public:
-		
-		static constexpr int maximumVariableSizeInBits=(1<<30);
 		
 		class Component
 		{
@@ -578,24 +601,12 @@ class ComputerBuilder
 				{
 					public:
 					
-					int isConstant=true;
-					int constantValue=0;
-					
-					int variableIndex=-1;
-					int variableOffsetInBits=0;
-					
-					int sizeInBits=1;
+					Container<InputExpression> expression;
 					
 					Input(){}
-					Input(bool _isConstant,int variableIndexOrConstantValue,int offset,int size)
+					Input(const InputExpression& _expression)
 					{
-						isConstant=_isConstant;
-						
-						if(isConstant) constantValue=variableIndexOrConstantValue;
-						else variableIndex=variableIndexOrConstantValue;
-						
-						variableOffsetInBits=offset;
-						sizeInBits=size;
+						expression.access()=_expression;
 					}
 				};
 				
@@ -606,18 +617,21 @@ class ComputerBuilder
 				string componentName;
 				int componentIndex=-1;
 				
+				int numberOfInstances=1;
+				
 				vector<Output> outputs;
 				vector<Input> inputs;
 				
 				int lineIndex=-1;
 				
 				Element(){}
-				Element(const Type& _type,const string& _componentName,int _componentIndex,const vector<Output>& _outputs,const vector<Input>& _inputs,
+				Element(const Type& _type,const string& _componentName,int _componentIndex,int _numberOfInstances,const vector<Output>& _outputs,const vector<Input>& _inputs,
 					int _lineIndex)
 				{
 					type=_type;
 					componentName=_componentName;
 					componentIndex=_componentIndex;
+					numberOfInstances=_numberOfInstances;
 					outputs=_outputs;
 					inputs=_inputs;
 					lineIndex=_lineIndex;
@@ -959,26 +973,9 @@ class ComputerBuilder
 				}
 			};
 			
-			template <class ValueT>
+			template <class ValueT,class ContextT>
 			class ExpressionEvaluator
 			{
-				public:
-				
-				class Variable
-				{
-					public:
-					
-					string name;
-					ValueT value;
-					
-					Variable(){}
-					Variable(const string& _name,const ValueT& _value)
-					{
-						name=_name;
-						value=_value;
-					}
-				};
-				
 				private:
 					class Code
 					{
@@ -1036,73 +1033,165 @@ class ComputerBuilder
 							{
 								return c>='a' && c<='z' || c>='A' && c<='Z' || c>='0' && c<='9' || c=='_';
 							}
-							static bool isDigit(uint8_t c)
-							{
-								return c>='0' && c<='9';
-							}
 						public:
-						
-						static bool isWordToken(const string& token)
-						{
-							return token.size()>0 && isCharacterOfWordToken(token[0]);
-						}
-						
-						static bool isIdentifierToken(const string& token)
-						{
-							return token.size()>0 && isCharacterOfWordToken(token[0]) && !isDigit(token[0]);
-						}
-						static bool isNumberToken(const string& token)
-						{
-							return token.size()>0 && isDigit(token[0]);
-						}
 					};
-					
-					ValueT getVariableWithName(const string& name,const vector<Variable>& variables)
-					{
-						int variableIndex=findWithName(variables,name);
-						if(variableIndex==-1) throw string()+"variable named '"+name+"' not found";
-						
-						return variables[variableIndex].value;
-					}
 				public:
 				
 				class Function
 				{
+					private:
+						using FunctionType=std::function<ValueT(const vector<ValueT>&,ContextT&)>;
+						using FunctionTypeNoContext=std::function<ValueT(const vector<ValueT>&)>;
+						
+						bool defined=false;
+						
+						string name;
+						
+						vector<vector<string>> nameTokens;
+						
+						FunctionType function;
+						
+						int numberOfArguments=-1;
+						
+						bool allowSkippedArguments=false;
+						
+						int separatorIndex=-1;
+						int terminatorIndex=-1;
+						
+						int operatorLevel=-1;
 					public:
 					
-					bool defined=false;
-					
-					string name;
-					vector<string> nameTokens;
-					
-					std::function<string(const vector<string>&)> function;
-					
-					int numberOfArguments=-1;
-					
-					Function(){}
-					Function(const string& _name,const std::function<string(const vector<string>&)>& _function,int _numberOfArguments=-1)
+					bool isDefined() const
 					{
-						defined=true;
-						
-						name=_name;
-						nameTokens=Code::tokenize(name);
-						
-						function=_function;
-						
-						numberOfArguments=_numberOfArguments;
+						return defined;
 					}
-					
+					string getName() const
+					{
+						return name;
+					}
+					vector<vector<string>> getNameTokens() const
+					{
+						return nameTokens;
+					}
+					vector<string> getSeparator() const
+					{
+						if(separatorIndex==-1) return vector<string>();
+						return nameTokens[separatorIndex];
+					}
+					vector<string> getTerminator() const
+					{
+						if(terminatorIndex==-1) return vector<string>();
+						return nameTokens[terminatorIndex];
+					}
+					int getOperatorLevel() const
+					{
+						return operatorLevel;
+					}
+					bool getAllowSkippedArguments() const
+					{
+						return allowSkippedArguments;
+					}
 					void setFixedNumberOfArguments(int _numberOfArguments)
 					{
 						numberOfArguments=_numberOfArguments;
+						validate();
 					}
-					ValueT execute(const vector<ValueT>& args)
+					void setAllowSkippedArguments(bool _allowSkippedArguments)
 					{
+						allowSkippedArguments=_allowSkippedArguments;
+						validate();
+					}
+					void setAsStarterAndSeparator()
+					{
+						separatorIndex=nameTokens.size()>=2 ? 1 : -1;
+						terminatorIndex=-1;
+						validate();
+					}
+					void setAsStarterAndOptionalSeparatorAndTerminator()
+					{
+						separatorIndex=nameTokens.size()>=3 ? 1 : -1;
+						terminatorIndex=nameTokens.size()>=2 ? nameTokens.size()-1 : -1;
+						validate();
+					}
+					void setOperatorLevel(int _operatorLevel)
+					{
+						operatorLevel=_operatorLevel;
+						validate();
+					}
+					
+					private:
+						void validate()
+						{
+							if(name.size()==0 || nameTokens.size()==0) throw string()+"Internal error: operator without name";
+							for(size_t i=0;i<nameTokens.size();i++)
+							{
+								if(nameTokens[i].size()==0) throw string()+"Internal error: operator with empty string in name";
+								if(i>0 && nameTokens[i].size()>1) throw string()+"Internal error: operator with separator or end strings with multiple tokens (not supported)";
+							}
+							if(function==nullptr) throw string()+"Internal error: operator without function";
+							if(numberOfArguments<-1) throw string()+"Internal error: operator with invalid number of arguments";
+							if(separatorIndex<-1 || separatorIndex>=int(nameTokens.size())) throw string()+"Internal error: operator with invalid separator index";
+							if(terminatorIndex<-1 || terminatorIndex>=int(nameTokens.size())) throw string()+"Internal error: operator with invalid terminator index";
+							
+							defined=true;
+						}
+						
+						void initialize(const vector<string>& _name,const FunctionType& _function,
+							int _numberOfArguments,bool _allowSkippedArguments)
+						{
+							for(size_t i=0;i<_name.size();i++)
+							{
+								nameTokens.push_back(Code::tokenize(_name[i]));
+							}
+							name= nameTokens.size()>0 ? Code::untokenize(nameTokens[0]) : string();
+							
+							function=_function;
+							
+							numberOfArguments=_numberOfArguments;
+							
+							allowSkippedArguments=_allowSkippedArguments;
+							
+							validate();
+						}
+						
+						void initialize(const vector<string>& _name,const FunctionTypeNoContext& _function,
+							int _numberOfArguments,bool _allowSkippedArguments)
+						{
+							initialize(vector<string>{_name},
+								[_function](const vector<ValueT>& args,ContextT& context)->ValueT
+								{
+									return _function(args);
+								},
+								_numberOfArguments,_allowSkippedArguments);
+						}
+					public:
+					
+					Function(){}
+					Function(const string& _name,const FunctionType& _function,int _numberOfArguments=-1,bool _allowSkippedArguments=false)
+					{
+						initialize(vector<string>{_name},_function,_numberOfArguments,_allowSkippedArguments);
+					}
+					Function(const vector<string>& _name,const FunctionType& _function,int _numberOfArguments=-1,bool _allowSkippedArguments=false)
+					{
+						initialize(_name,_function,_numberOfArguments,_allowSkippedArguments);
+					}
+					Function(const string& _name,const FunctionTypeNoContext& _function,int _numberOfArguments=-1,bool _allowSkippedArguments=false)
+					{
+						initialize(vector<string>{_name},_function,_numberOfArguments,_allowSkippedArguments);
+					}
+					Function(const vector<string>& _name,const FunctionTypeNoContext& _function,int _numberOfArguments=-1,bool _allowSkippedArguments=false)
+					{
+						initialize(_name,_function,_numberOfArguments,_allowSkippedArguments);
+					}
+					
+					ValueT execute(const vector<ValueT>& args,ContextT& context) const
+					{
+						if(!isDefined()) throw string()+"Internal error: executing an operator that is not defined";
 						if(numberOfArguments!=-1)
 						{
-							if(args.size()!=numberOfArguments) throw wrongNumberOfArgumentsMessage(name);
+							if(args.size()!=numberOfArguments) throw string()+"wrong number of arguments for function: '"+name+"'";
 						}
-						return function(args);
+						return function(args,context);
 					}
 				};
 				
@@ -1114,163 +1203,243 @@ class ComputerBuilder
 							functionsToModify[f].setFixedNumberOfArguments(numberOfArguments);
 						}
 					}
-					
-					static string wrongNumberOfArgumentsMessage(const string& functionName)
+					void setAsStarterAndSeparator(vector<Function>& functionsToModify)
 					{
-						return string()+"wrong number of arguments for function: '"+functionName+"'";
+						for(int f=0;f<functionsToModify.size();f++)
+						{
+							functionsToModify[f].setAsStarterAndSeparator();
+						}
+					}
+					void setAsStarterAndOptionalSeparatorAndTerminator(vector<Function>& functionsToModify)
+					{
+						for(int f=0;f<functionsToModify.size();f++)
+						{
+							functionsToModify[f].setAsStarterAndOptionalSeparatorAndTerminator();
+						}
 					}
 					
 					vector<Function> unaryOperators;
 					vector<Function> binaryOperators;
 					vector<vector<string>> binaryOperatorLevels;
-					Function ternaryOperator;
+					vector<Function> ternaryOperators;
 					vector<Function> functions;
+					vector<Function> bracketFunctionOperators;
+					vector<Function> bracketOperators;
+					
+					std::function<ValueT(const string&,ContextT&)> tokenResolutionFunction;
+					
+					bool changed=true;
 				public:
 				
+				void setTokenResolutionFunction(const std::function<ValueT(const string&,ContextT&)>& f)
+				{
+					tokenResolutionFunction=f;
+					changed=true;
+				}
 				void setUnaryOperators(const vector<Function>& f)
 				{
 					unaryOperators=f;
 					setFixedNumberOfArguments(unaryOperators,1);
+					changed=true;
 				}
 				void setBinaryOperators(const vector<Function>& f,const vector<vector<string>>& operatorLevels)
 				{
 					binaryOperators=f;
 					setFixedNumberOfArguments(binaryOperators,2);
+					
 					binaryOperatorLevels=operatorLevels;
+					std::reverse(binaryOperatorLevels.begin(),binaryOperatorLevels.end());
+					
+					for(int i=0;i<binaryOperators.size();i++)
+					{
+						binaryOperators[i].setOperatorLevel(-1);
+					}
+					for(int i=0;i<binaryOperatorLevels.size();i++)
+					{
+						for(int j=0;j<binaryOperatorLevels[i].size();j++)
+						{
+							string name=Code::untokenize(Code::tokenize(binaryOperatorLevels[i][j]));
+							
+							Function*op=findFunctionWithName(binaryOperators,name);
+							if(op!=nullptr) op->setOperatorLevel(getBinaryOperatorLevel(i));
+						}
+					}
+					for(int i=0;i<binaryOperators.size();i++)
+					{
+						Function*op=&binaryOperators[i];
+						if(op->getOperatorLevel()==-1)
+						{
+							throw string()+"internal error: binary operator with no defined level: '"+op->getName()+"'";
+						}
+					}
+					
+					changed=true;
 				}
-				void setTernaryOperator(const Function& f)
+				void setTernaryOperators(const vector<Function>& f)
 				{
-					ternaryOperator=f;
-					ternaryOperator.setFixedNumberOfArguments(3);
+					ternaryOperators=f;
+					setFixedNumberOfArguments(ternaryOperators,3);
+					setAsStarterAndSeparator(ternaryOperators);
+					changed=true;
 				}
 				void setFunctions(const vector<Function>& f)
 				{
 					functions=f;
+					changed=true;
+				}
+				void setBracketFunctionOperators(const vector<Function>& f)
+				{
+					bracketFunctionOperators=f;
+					setAsStarterAndOptionalSeparatorAndTerminator(bracketFunctionOperators);
+					changed=true;
+				}
+				void setBracketOperators(const vector<Function>& f)
+				{
+					bracketOperators=f;
+					setAsStarterAndOptionalSeparatorAndTerminator(bracketOperators);
+					changed=true;
 				}
 				
 				private:
-					int getBinaryOperatorLevel(const string& op)
+					vector<string> delimiters;
+					
+					void addDelimiter(const string& str)
 					{
-						for(int i=0;i<binaryOperatorLevels.size();i++)
+						if(str.size()>0 && !isDelimiter(str))
 						{
-							for(int j=0;j<binaryOperatorLevels[i].size();j++)
-							{
-								if(op==binaryOperatorLevels[i][j])
-								{
-									return binaryOperatorLevels.size()-i;
-								}
-							}
+							delimiters.push_back(str);
 						}
-						return 0;
 					}
-					int getMaximumBinaryOperatorLevel()
+					void updateChanges()
 					{
-						return binaryOperatorLevels.size()+1;
+						delimiters=vector<string>{")",","};
+						for(int i=0;i<ternaryOperators.size();i++)
+						{
+							if(!ternaryOperators[i].isDefined()) continue;
+							addDelimiter(getOperatorSeparator(&ternaryOperators[i]));
+						}
+						for(int i=0;i<bracketFunctionOperators.size();i++)
+						{
+							if(!bracketFunctionOperators[i].isDefined()) continue;
+							addDelimiter(getOperatorSeparator(&bracketFunctionOperators[i]));
+							addDelimiter(getOperatorTerminator(&bracketFunctionOperators[i]));
+						}
+						for(int i=0;i<bracketOperators.size();i++)
+						{
+							if(!bracketOperators[i].isDefined()) continue;
+							addDelimiter(getOperatorSeparator(&bracketOperators[i]));
+							addDelimiter(getOperatorTerminator(&bracketOperators[i]));
+						}
+						
+						changed=false;
 					}
 					
-					bool parseOperator(const Code& code,size_t& tokenIndex,string& outputOp,const vector<Function>& operators)
+					bool isDelimiter(const string& token)
+					{
+						for(int i=0;i<delimiters.size();i++)
+						{
+							if(token==delimiters[i]) return true;
+						}
+						return false;
+					}
+					
+					static constexpr int ternaryOperatorLevel=1;
+					static constexpr int binaryOperatorLevels_start=2;
+					static constexpr int unaryOperatorLevel_aboveBinaryOperators=1;
+					static constexpr int bracketFunctionOperatorLevel_aboveBinaryOperators=2;
+					
+					int getTernaryOperatorLevel()
+					{
+						return ternaryOperatorLevel;
+					}
+					int getBinaryOperatorLevel(int offset)
+					{
+						return binaryOperatorLevels_start+offset;
+					}
+					int getUnaryOperatorLevel()
+					{
+						return binaryOperatorLevels_start+int(binaryOperatorLevels.size())-1+unaryOperatorLevel_aboveBinaryOperators;
+					}
+					int getBracketFunctionOperatorLevel()
+					{
+						return binaryOperatorLevels_start+int(binaryOperatorLevels.size())-1+bracketFunctionOperatorLevel_aboveBinaryOperators;
+					}
+					
+					bool parseOperator(const Code& code,size_t& tokenIndex,Function*& outputOp,vector<Function>& operators)
 					{
 						size_t t=tokenIndex;
 						vector<int> matches(operators.size(),true);
-						vector<string> candidate;
-						for(;;)
+						int candidateIndex=-1;
+						for(int tokens=1;;tokens++)
 						{
 							if(t>=code.tokens.size()) break;
 							
 							string token=code.tokens[t];
-							
-							candidate.push_back(token);
 							
 							int matchIndex=-1;
 							for(int o=0;o<matches.size();o++)
 							{
 								if(!matches[o]) continue;
 								
-								if(operators[o].nameTokens.size()<candidate.size()) matches[o]=false;
-								else matches[o]= operators[o].nameTokens[candidate.size()-1]==candidate[candidate.size()-1];
+								if(!operators[o].isDefined())
+								{
+									matches[o]=false;
+									continue;
+								}
+								
+								if(operators[o].getNameTokens()[0].size()<tokens) matches[o]=false;
+								else matches[o]= operators[o].getNameTokens()[0][tokens-1]==token;
 								
 								if(matches[o]) matchIndex=o;
+								
+								if(matches[o] && operators[o].getNameTokens()[0].size()==tokens)
+								{
+									candidateIndex=o;
+								}
 							}
 							
-							if(matchIndex==-1)
-							{
-								candidate.resize(candidate.size()-1);
-								break;
-							}
+							if(matchIndex==-1) break;
 							
 							t++;
 						}
 						
-						if(candidate.size()==0) return false;
+						if(candidateIndex==-1) return false;
 						
 						tokenIndex=t;
-						outputOp=Code::untokenize(candidate);
+						outputOp=&operators[candidateIndex];
 						return true;
 					}
-					bool parseUnaryOperator(const Code& code,size_t& t,string& op)
+					Function*findFunctionWithName(vector<Function>& f,const string& name)
 					{
-						return parseOperator(code,t,op,unaryOperators);
+						for(int i=0;i<f.size();i++)
+						{
+							if(f[i].getName()==name) return &f[i];
+						}
+						return nullptr;
 					}
-					bool parseBinaryOperator(const Code& code,size_t& t,string& op)
-					{
-						return parseOperator(code,t,op,binaryOperators);
-					}
-					bool parseFunctionName(const Code& code,size_t& t,string& functionName)
+					bool parseFunctionName(const Code& code,size_t& t,Function*& function)
 					{
 						string token=code.tokens[t];
-						if(findWithName(functions,token)!=-1)
-						{
-							functionName=token;
-							t++;
-							return true;
-						}
-						else return false;
+						function=findFunctionWithName(functions,token);
+						if(function==nullptr) return false;
+						t++;
+						return true;
+					}
+					string getOperatorSeparator(Function*op)
+					{
+						if(op==nullptr) return string();
+						vector<string> v=op->getSeparator();
+						if(v.size()==0) return string();
+						return v[0];
+					}
+					string getOperatorTerminator(Function*op)
+					{
+						if(op==nullptr) return string();
+						vector<string> v=op->getTerminator();
+						if(v.size()==0) return string();
+						return v[0];
 					}
 					
-					ValueT executeUnaryOperator(const string& op,const ValueT& a)
-					{
-						int index=findWithName(unaryOperators,op);
-						if(index!=-1)
-						{
-							if(!unaryOperators[index].defined) executingFunctionNotDefinedMessage(op,__LINE__);
-							return unaryOperators[index].execute(vector<ValueT>{a});
-						}
-						else throw executingFunctionNotDefinedMessage(op,__LINE__);
-					}
-					ValueT executeBinaryOperator(const string& op,const ValueT& a,const ValueT& b)
-					{
-						int index=findWithName(binaryOperators,op);
-						if(index!=-1)
-						{
-							if(!binaryOperators[index].defined) executingFunctionNotDefinedMessage(op,__LINE__);
-							return binaryOperators[index].execute(vector<ValueT>{a,b});
-						}
-						else throw executingFunctionNotDefinedMessage(op,__LINE__);
-					}
-					ValueT executeTernaryOperator(const ValueT& a,const ValueT& b,const ValueT& c)
-					{
-						if(!ternaryOperator.defined) executingTernaryOperatorNotDefinedMessage(__LINE__);
-						return ternaryOperator.execute(vector<ValueT>{a,b,c});
-					}
-					ValueT executeFunction(const string& functionName,const vector<ValueT>& args)
-					{
-						int index=findWithName(functions,functionName);
-						if(index!=-1)
-						{
-							if(!functions[index].defined) executingFunctionNotDefinedMessage(functionName,__LINE__);
-							return functions[index].execute(args);
-						}
-						else throw executingFunctionNotDefinedMessage(functionName,__LINE__);
-					}
-					
-					string executingFunctionNotDefinedMessage(const string& functionName,int errorCode)
-					{
-						return string()+"internal error: executing a function/operator that is not defined: '"+functionName+"'";
-					}
-					string executingTernaryOperatorNotDefinedMessage(int errorCode)
-					{
-						return "internal error: executing a ternary operator that is not defined";
-					}
 					string expectedContinuationMessage(int errorCode)
 					{
 						return "expected continuation of expression";
@@ -1284,7 +1453,48 @@ class ComputerBuilder
 						return string()+"unexpected symbol '"+token+"'";
 					}
 					
-					ValueT evaluateExpressionPart(const Code& code,size_t& t,const vector<Variable>& variables,int level)
+					vector<ValueT> evaluateVariableArgumentOperatorArguments(const Code& code,size_t& t,ContextT& context,
+						const string& separator,const string& terminator,bool allowSkippedArguments)
+					{
+						vector<ValueT> arguments;
+						
+						for(;;)
+						{
+							if(allowSkippedArguments)
+							{
+								if(code.tokens[t]==separator || code.tokens[t]==terminator)
+								{
+									if(tokenResolutionFunction==nullptr) throw unexpectedTokenMessage(code.tokens[t],__LINE__);
+									arguments.push_back(tokenResolutionFunction(string(),context));
+								}
+								else
+								{
+									arguments.push_back(evaluateExpressionPart(code,t,context,0));
+									if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
+								}
+							}
+							else
+							{
+								if(code.tokens[t]==terminator) break;
+								
+								arguments.push_back(evaluateExpressionPart(code,t,context,0));
+								if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
+							}
+							
+							if(code.tokens[t]==separator)
+							{
+								t++;
+								if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
+							}
+							else if(code.tokens[t]==terminator) break;
+							else throw expectedTokenMessage(terminator,code.tokens[t],__LINE__);
+						}
+						
+						t++;
+						
+						return arguments;
+					}
+					ValueT evaluateExpressionPart(const Code& code,size_t& t,ContextT& context,int level)
 					{
 						if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
 						
@@ -1292,133 +1502,166 @@ class ComputerBuilder
 						
 						ValueT lvalue;
 						
-						if(token=="(")
+						Function*bracketOperator=nullptr;
+						if(parseOperator(code,t,bracketOperator,bracketOperators))
 						{
-							t++;
 							if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
-							lvalue=evaluateExpressionPart(code,t,variables,0);
-							if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
-							if(code.tokens[t]!=")") throw expectedTokenMessage(")",code.tokens[t],__LINE__);
-							t++;
+							
+							string separator=getOperatorSeparator(bracketOperator);
+							string terminator=getOperatorTerminator(bracketOperator);
+							
+							bool allowSkippedArguments=bracketOperator->getAllowSkippedArguments();
+							vector<ValueT> arguments=evaluateVariableArgumentOperatorArguments(code,t,context,separator,terminator,allowSkippedArguments);
+							
+							lvalue=bracketOperator->execute(arguments,context);
 						}
-						else if(Code::isIdentifierToken(token))
+						else
 						{
-							string functionName;
-							if(parseFunctionName(code,t,functionName))
+							Function*function;
+							if(parseFunctionName(code,t,function))
 							{
 								if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
 								if(code.tokens[t]!="(") throw expectedTokenMessage("(",code.tokens[t],__LINE__);
 								t++;
 								if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
 								
-								vector<ValueT> functionArguments;
+								bool allowSkippedArguments=false;
+								vector<ValueT> arguments=evaluateVariableArgumentOperatorArguments(code,t,context,",",")",allowSkippedArguments);
 								
-								for(;;)
-								{
-									if(code.tokens[t]==")") break;
-									
-									functionArguments.push_back(evaluateExpressionPart(code,t,variables,0));
-									
-									if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
-									if(code.tokens[t]==",")
-									{
-										t++;
-										if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
-									}
-									else if(code.tokens[t]!=")") throw expectedTokenMessage(")",code.tokens[t],__LINE__);
-								}
-								
-								lvalue=executeFunction(functionName,functionArguments);
-								
-								if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
-								if(code.tokens[t]!=")") throw expectedTokenMessage(")",code.tokens[t],__LINE__);
-								t++;
+								lvalue=function->execute(arguments,context);
 							}
 							else
 							{
-								lvalue=getVariableWithName(token,variables);
-								t++;
+								Function*unaryOperator;
+								if(parseOperator(code,t,unaryOperator,unaryOperators))
+								{
+									if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
+									lvalue=unaryOperator->execute(vector<ValueT>{evaluateExpressionPart(code,t,context,getUnaryOperatorLevel())},context);
+								}
+								else
+								{
+									if(tokenResolutionFunction==nullptr) throw unexpectedTokenMessage(code.tokens[t],__LINE__);
+									lvalue=tokenResolutionFunction(token,context);
+									t++;
+								}
 							}
-						}
-						else if(Code::isNumberToken(token))
-						{
-							lvalue=ValueT(token);
-							t++;
-						}
-						else
-						{
-							string op;
-							if(parseUnaryOperator(code,t,op))
-							{
-								if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
-								lvalue=executeUnaryOperator(op,evaluateExpressionPart(code,t,variables,getMaximumBinaryOperatorLevel()));
-							}
-							else throw unexpectedTokenMessage(code.tokens[t],__LINE__);
 						}
 						
 						for(;;)
 						{
 							if(t>=code.tokens.size()) break;
 							token=code.tokens[t];
-							if(token=="," || token==")") break;
+							if(isDelimiter(token)) break;
 							
-							if(token=="?" && ternaryOperator.defined)
 							{
-								if(level>0) break;
-								
-								t++;
-								if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
-								
-								ValueT valueA=evaluateExpressionPart(code,t,variables,0);
-								
-								if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
-								if(code.tokens[t]!=":") throw expectedTokenMessage(":",code.tokens[t],__LINE__);
-								t++;
-								if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
-								
-								ValueT valueB=evaluateExpressionPart(code,t,variables,0);
-								
-								lvalue=executeTernaryOperator(lvalue,valueA,valueB);
-								
-								break;
-							}
-							
-							string op;
-							size_t tCopy=t;
-							if(parseBinaryOperator(code,t,op))
-							{
-								int operatorLevel=getBinaryOperatorLevel(op);
-								if(operatorLevel>level)
+								Function*ternaryOperator;
+								if(parseOperator(code,t,ternaryOperator,ternaryOperators))
 								{
-									if(t>=code.tokens.size()) throw 1;
-									lvalue=executeBinaryOperator(op,lvalue,evaluateExpressionPart(code,t,variables,operatorLevel));
-								}
-								else
-								{
-									t=tCopy;
+									if(getTernaryOperatorLevel()>level)
+									{
+										if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
+										
+										ValueT valueA=evaluateExpressionPart(code,t,context,0);
+										
+										if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
+										string separator=getOperatorSeparator(ternaryOperator);
+										if(code.tokens[t]!=separator) throw expectedTokenMessage(separator,code.tokens[t],__LINE__);
+										t++;
+										if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
+										
+										ValueT valueB=evaluateExpressionPart(code,t,context,0);
+										
+										lvalue=ternaryOperator->execute(vector<ValueT>{lvalue,valueA,valueB},context);
+									}
+									
 									break;
 								}
 							}
-							else throw unexpectedTokenMessage(code.tokens[t],__LINE__);
+							
+							{
+								int operatorLevel=getBracketFunctionOperatorLevel();
+								if(operatorLevel>level)
+								{
+									Function*bracketFunctionOperator;
+									if(parseOperator(code,t,bracketFunctionOperator,bracketFunctionOperators))
+									{
+										if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
+										
+										string separator=getOperatorSeparator(bracketFunctionOperator);
+										string terminator=getOperatorTerminator(bracketFunctionOperator);
+										
+										bool allowSkippedArguments=bracketFunctionOperator->getAllowSkippedArguments();
+										vector<ValueT> arguments=evaluateVariableArgumentOperatorArguments(code,t,context,separator,terminator,allowSkippedArguments);
+										
+										arguments.insert(arguments.begin(),lvalue);
+										
+										lvalue=bracketFunctionOperator->execute(arguments,context);
+										
+										continue;
+									}
+								}
+							}
+							
+							{
+								Function*binaryOperator;
+								size_t tCopy=t;
+								if(parseOperator(code,t,binaryOperator,binaryOperators))
+								{
+									int operatorLevel=binaryOperator->getOperatorLevel();
+									if(operatorLevel>level)
+									{
+										if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
+										
+										lvalue=binaryOperator->execute(vector<ValueT>{lvalue,evaluateExpressionPart(code,t,context,operatorLevel)},context);
+										
+										continue;
+									}
+									else
+									{
+										t=tCopy;
+										break;
+									}
+								}
+								else throw unexpectedTokenMessage(code.tokens[t],__LINE__);
+							}
 						}
 						
 						return lvalue;
 					}
 				public:
 				
-				ValueT evaluate(const string& expressionString,const vector<Variable>& variables)
+				ValueT evaluate(const string& expressionString,ContextT& context)
 				{
+					if(changed) updateChanges();
+					
 					Code code(expressionString);
 					size_t t=0;
-					return evaluateExpressionPart(code,t,variables,0);
+					ValueT result=evaluateExpressionPart(code,t,context,0);
+					
+					if(t<code.tokens.size()) throw unexpectedTokenMessage(code.tokens[t],__LINE__);
+					
+					return result;
 				}
 			};
 			
 			class TemplateExpressionEvaluator
 			{
+				class Context
+				{
+					public:
+					
+					vector<TemplateArgument> variables;
+					
+					Context(){}
+					explicit Context(const vector<TemplateArgument>& _variables)
+					{
+						variables=_variables;
+					}
+				};
+				
 				private:
-					ExpressionEvaluator<string> expressionEvaluator;
-					using Function=ExpressionEvaluator<string>::Function;
+					ExpressionEvaluator<string,Context> expressionEvaluator;
+					using Function=ExpressionEvaluator<string,Context>::Function;
 					
 					static int stringToInt(const string& str)
 					{
@@ -1442,7 +1685,22 @@ class ComputerBuilder
 				
 				TemplateExpressionEvaluator()
 				{
-					vector<ExpressionEvaluator<string>::Function> unaryOperators=vector<Function>
+					std::function<string(const string&,Context&)> tokenResolutionFunction=[](const string& token,const Context& context)->string
+					{
+						if(token.size()>0 && token[0]>='0' && token[0]<='9')
+						{
+							return intToString(stringToInt(token));
+						}
+						else
+						{
+							int variableIndex=findWithName(context.variables,token);
+							if(variableIndex==-1) throw string()+"variable named '"+token+"' not found";
+							
+							return context.variables[variableIndex].value;
+						}
+					};
+					
+					vector<Function> unaryOperators=vector<Function>
 					{
 						Function("-",[this](const vector<string>& args)->string
 						{
@@ -1668,10 +1926,12 @@ class ComputerBuilder
 						vector<string>{"||"}
 					};
 					
-					Function ternaryOperator=Function("?",[this](const vector<string>& args)->string
-					{
-						return stringToInt(args[0])?args[1]:args[2];
-					});
+					vector<Function> ternaryOperators=vector<Function>{
+						Function(vector<string>{"?",":"},[this](const vector<string>& args)->string
+						{
+							return stringToInt(args[0])?args[1]:args[2];
+						})
+					};
 					
 					vector<Function> functions=vector<Function>{
 						Function("isp2",[this](const vector<string>& args)->string
@@ -1707,33 +1967,612 @@ class ComputerBuilder
 						},1)
 					};
 					
+					vector<Function> bracketOperators=vector<Function>{
+						Function(vector<string>{"(",")"},[this](const vector<string>& args)->string
+						{
+							return args[0];
+						},1)
+					};
+					
+					expressionEvaluator.setTokenResolutionFunction(tokenResolutionFunction);
 					expressionEvaluator.setUnaryOperators(unaryOperators);
 					expressionEvaluator.setBinaryOperators(binaryOperators,binaryOperatorLevels);
-					expressionEvaluator.setTernaryOperator(ternaryOperator);
+					expressionEvaluator.setTernaryOperators(ternaryOperators);
 					expressionEvaluator.setFunctions(functions);
+					expressionEvaluator.setBracketOperators(bracketOperators);
 				}
 				
 				string evaluate(const string& expressionString,const vector<TemplateArgument>& templateArguments)
 				{
-					vector<ExpressionEvaluator<string>::Variable> variables(templateArguments.size());
-					for(size_t i=0;i<templateArguments.size();i++)
-					{
-						variables[i]=ExpressionEvaluator<string>::Variable(templateArguments[i].name,templateArguments[i].value);
-					}
-					return expressionEvaluator.evaluate(expressionString,variables);
+					Context context(templateArguments);
+					return expressionEvaluator.evaluate(expressionString,context);
 				}
 			};
 			
+			TemplateExpressionEvaluator templateExpressionEvaluator;
+			
 			string getTemplateArgumentExpressionResult(const string& expressionString,const vector<TemplateArgument>& templateArguments,int lineIndex)
 			{
-				TemplateExpressionEvaluator evaluator;
 				try
 				{
-					return evaluator.evaluate(expressionString,templateArguments);
+					return templateExpressionEvaluator.evaluate(expressionString,templateArguments);
 				}
 				catch(const string& str)
 				{
-					throw errorString(string()+"Error in expression evaluation: "+str+"\nThe expression is: "+expressionString,lineIndex);
+					throw errorString(string()+"Error in template expression evaluation: "+str+"\nThe expression is: "+expressionString,lineIndex);
+				}
+			}
+			
+			class InputExpression
+			{
+				public:
+				
+				class ValueMetadata
+				{
+					public:
+					
+					int size=-1;
+					
+					ValueMetadata(){}
+					explicit ValueMetadata(int _size)
+					{
+						size=_size;
+					}
+				};
+				
+				enum class Type{none,integerConstant,variable,operation};
+				
+				Type type=Type::none;
+				
+				
+				int integerConstantValue=0;
+				
+				int variableIndex=-1;
+				
+				int operationIndex=-1;
+				vector<InputExpression> operationArguments;
+				vector<int> operationIntegerArguments;
+				
+				
+				ValueMetadata resultMetadata;
+				
+				InputExpression(){}
+				explicit InputExpression(int _integerConstantValue)
+				{
+					type=Type::integerConstant;
+					integerConstantValue=_integerConstantValue;
+				}
+				InputExpression(const Component::Variable& variable,int _variableIndex)
+				{
+					type=Type::variable;
+					variableIndex=_variableIndex;
+					resultMetadata=ValueMetadata(variable.sizeInBits);
+				}
+				InputExpression(int _operationIndex,
+					const vector<InputExpression>& _operationArguments,const vector<int>& _operationIntegerArguments,
+					const ValueMetadata& _resultMetadata)
+				{
+					type=Type::operation;
+					operationIndex=_operationIndex;
+					operationArguments=_operationArguments;
+					operationIntegerArguments=_operationIntegerArguments;
+					resultMetadata=_resultMetadata;
+				}
+				bool isIntegerConstant() const
+				{
+					return type==Type::integerConstant;
+				}
+				bool isBitArray() const
+				{
+					return type==Type::variable || type==Type::operation;
+				}
+			};
+			
+			class InputExpressionEvaluator
+			{
+				public:
+				
+				class BitOrigin
+				{
+					public:
+					
+					enum class Type{constant,variable};
+					
+					Type type=Type::constant;
+					
+					int constantValue=0;
+					
+					int variableIndex=-1;
+					int variableBitIndex=-1;
+					
+					BitOrigin(){}
+					explicit BitOrigin(int _constantValue)
+					{
+						constantValue=_constantValue;
+					}
+					BitOrigin(int _variableIndex,int _variableBitIndex)
+					{
+						type=Type::variable;
+						variableIndex=_variableIndex;
+						variableBitIndex=_variableBitIndex;
+					}
+				};
+				
+				class BitOriginVector
+				{
+					public:
+					
+					vector<BitOrigin> content;
+					
+					BitOriginVector(){}
+					explicit BitOriginVector(const vector<BitOrigin>& _content)
+					{
+						content=_content;
+					}
+					BitOriginVector(int size,int value)
+					{
+						content=vector<BitOrigin>(size);
+						for(int i=0;i<content.size();i++)
+						{
+							if(i<32) content[i].constantValue=(uint32_t(value)>>i)&1;
+							else content[i].constantValue=(uint32_t(value)>>31)&1;
+						}
+					}
+					explicit BitOriginVector(const InputExpression& variableInputExpression)
+					{
+						if(variableInputExpression.type!=InputExpression::Type::variable)
+						{
+							throw string()+"internal error: trying to get a BitOriginVector from an InputExpression that is not of variable type";
+						}
+						
+						content=vector<BitOrigin>(variableInputExpression.resultMetadata.size);
+						for(int i=0;i<content.size();i++)
+						{
+							content[i]=BitOrigin(variableInputExpression.variableIndex,i);
+						}
+					}
+					
+					BitOriginVector subVector(const vector<int>& indexingVector) const
+					{
+						if(indexingVector.size()!=2) throw string()+"internal error: indexing vector sizes do not match with subvector function";
+						
+						if(indexingVector[0]<0 || indexingVector[0]>=content.size() || indexingVector[1]<0 || indexingVector[1]>content.size())
+						{
+							throw string()+"internal error: indexing vector values do not match with content size in subvector function";
+						}
+						
+						return BitOriginVector(vector<BitOrigin>(content.begin()+indexingVector[0],content.begin()+indexingVector[1]));
+					}
+					
+					static BitOriginVector concatenate(const BitOriginVector& a,const BitOriginVector& b)
+					{
+						BitOriginVector r=a;
+						r.content.insert(r.content.end(),b.content.begin(),b.content.end());
+						return r;
+					}
+					static BitOriginVector reverse(const BitOriginVector& a)
+					{
+						BitOriginVector r=a;
+						std::reverse(r.content.begin(),r.content.end());
+						return r;
+					}
+					static BitOriginVector repeat(const BitOriginVector& a,int b)
+					{
+						if(b==0) throw string()+"internal error: BitOriginVector::repeat 0 times";
+						
+						if(b<0)
+						{
+							if(b==int(uint32_t(1)<<31)) throw string()+"internal error: BitOriginVector::repeat <minimum negative> times";
+							
+							return repeat(reverse(a),-b);
+						}
+						else
+						{
+							BitOriginVector r=a;
+							r.content.reserve(a.content.size()*b);
+							for(int i=1;i<b;i++)
+							{
+								r.content.insert(r.content.end(),a.content.begin(),a.content.end());
+							}
+							return r;
+						}
+					}
+					static BitOriginVector transpose(const BitOriginVector& a,int b)
+					{
+						int aSize=a.content.size();
+						
+						if(b<=0 || b>aSize || aSize%b!=0)
+						{
+							throw string()+"internal error: BitOriginVector::transpose with: size="
+								+std::to_string(a.content.size())+", width="+std::to_string(b);
+						}
+						
+						BitOriginVector r;
+						r.content=vector<BitOrigin>(a.content.size());
+						for(int i=0;i<(aSize/b);i++)
+						{
+							for(int j=0;j<b;j++)
+							{
+								r.content[j*(aSize/b)+i]=a.content[i*b+j];
+							}
+						}
+						return r;
+					}
+				};
+				
+				private:
+					class ParserContext
+					{
+						public:
+						
+						vector<Component::Variable> variables;
+						
+						ParserContext(){}
+						explicit ParserContext(const vector<Component::Variable>& _variables)
+						{
+							variables=_variables;
+						}
+					};
+					
+					using ParserFunction=ExpressionEvaluator<InputExpression,ParserContext>::Function;
+					using EvaluatorFunction=std::function<BitOriginVector(const vector<BitOriginVector>&,const vector<int>&)>;
+					
+					class Operation
+					{
+						public:
+						
+						enum class Type{none,unaryOperator,binaryOperator,ternaryOperator,function,bracketOperator,bracketFunctionOperator};
+						
+						Type type=Type::none;
+						ParserFunction parserFunction;
+						EvaluatorFunction evaluatorFunction;
+						
+						Operation(){}
+						Operation(const Type& _type,const ParserFunction& _parserFunction,const EvaluatorFunction& _evaluatorFunction)
+						{
+							type=_type;
+							parserFunction=_parserFunction;
+							evaluatorFunction=_evaluatorFunction;
+						}
+					};
+					
+					class Parser
+					{
+						private:
+							ExpressionEvaluator<InputExpression,ParserContext> expressionEvaluator;
+							using Function=ExpressionEvaluator<InputExpression,ParserContext>::Function;
+							
+							static int stringToInt(const string& str)
+							{
+								int intValue=0;
+								if(!stringToIntSimple(str,intValue)) throw string()+"could not convert the string '"+str+"' to integer";
+								return intValue;
+							}
+						public:
+						
+						Parser(){}
+						Parser(vector<Operation>& operations)
+						{
+							std::function<InputExpression(const string&,ParserContext&)> tokenResolutionFunction=[](const string& token,const ParserContext& context)->InputExpression
+							{
+								if(token.size()>0 && token[0]>='0' && token[0]<='9')
+								{
+									return InputExpression(stringToInt(token));
+								}
+								else
+								{
+									int variableIndex=findWithName(context.variables,token);
+									if(variableIndex==-1) throw string()+"variable named '"+token+"' not found";
+									
+									const Component::Variable& variable=context.variables[variableIndex];
+									if(variable.type==Component::Variable::Type::output)
+									{
+										throw string()+"reading from output variable: '"+token+"'";
+									}
+									
+									return InputExpression(variable,variableIndex);
+								}
+							};
+							vector<Function> unaryOperators=vector<Function>{
+								Function("-",[this](const vector<InputExpression>& args)->InputExpression
+								{
+									if(!args[0].isIntegerConstant()) throw string()+"expected integer for sign change";
+									
+									int a=args[0].integerConstantValue;
+									
+									int r=(-SafeInteger(a)).getValue();
+									
+									return InputExpression(r);
+								})
+							};
+							vector<Function> binaryOperators=vector<Function>{};
+							vector<vector<string>> binaryOperatorLevels=vector<vector<string>>
+							{
+								vector<string>{"**"},
+								vector<string>{"*","/","%"},
+								vector<string>{"+","-"},
+								vector<string>{"<<",">>",">>>"},
+								vector<string>{"<","<=",">",">="},
+								vector<string>{"==","!="},
+								vector<string>{"&"},
+								vector<string>{"^"},
+								vector<string>{"|"},
+								vector<string>{"&&"},
+								vector<string>{"||"}
+							};
+							vector<Function> ternaryOperators=vector<Function>{};
+							vector<Function> functions=vector<Function>{};
+							vector<Function> bracketFunctionOperators=vector<Function>{};
+							vector<Function> bracketOperators=vector<Function>{
+								Function(vector<string>{"(",")"},[this](const vector<InputExpression>& args)->InputExpression
+								{
+									return args[0];
+								},1)
+							};
+							
+							for(int i=0;i<operations.size();i++)
+							{
+								Operation& op=operations[i];
+								if(op.type==Operation::Type::unaryOperator) unaryOperators.push_back(op.parserFunction);
+								else if(op.type==Operation::Type::binaryOperator) binaryOperators.push_back(op.parserFunction);
+								else if(op.type==Operation::Type::ternaryOperator) ternaryOperators.push_back(op.parserFunction);
+								else if(op.type==Operation::Type::function) functions.push_back(op.parserFunction);
+								else if(op.type==Operation::Type::bracketFunctionOperator) bracketFunctionOperators.push_back(op.parserFunction);
+								else if(op.type==Operation::Type::bracketOperator) bracketOperators.push_back(op.parserFunction);
+							}
+							
+							expressionEvaluator.setTokenResolutionFunction(tokenResolutionFunction);
+							expressionEvaluator.setUnaryOperators(unaryOperators);
+							expressionEvaluator.setBinaryOperators(binaryOperators,binaryOperatorLevels);
+							expressionEvaluator.setTernaryOperators(ternaryOperators);
+							expressionEvaluator.setFunctions(functions);
+							expressionEvaluator.setBracketFunctionOperators(bracketFunctionOperators);
+							expressionEvaluator.setBracketOperators(bracketOperators);
+						}
+						
+						InputExpression evaluate(const string& expressionString,const vector<Component::Variable>& variables)
+						{
+							ParserContext context(variables);
+							return expressionEvaluator.evaluate(expressionString,context);
+						}
+					};
+					
+					vector<Operation> operations;
+					Parser parser;
+					
+					void addOperation(int& operationIndex,const Operation& op)
+					{
+						operations.emplace_back(op);
+						operationIndex++;
+					}
+				public:
+				
+				InputExpressionEvaluator()
+				{
+					int operationIndex=0;
+					
+					addOperation(operationIndex,
+						Operation(
+							Operation::Type::bracketFunctionOperator,
+							ParserFunction(vector<string>{"[",":","]"},[this,operationIndex](const vector<InputExpression>& args)->InputExpression
+							{
+								if(args.size()<2 || args.size()>3) throw string()+"invalid parameter count for bit range";
+								
+								if(!args[0].isBitArray())
+								{
+									throw string()+"expected bit array for bit range";
+								}
+								
+								if(!args[1].isIntegerConstant()) throw string()+"expected integer for bit range";
+								if(args.size()>2 && !args[2].isIntegerConstant()) throw string()+"expected integer for bit range";
+								
+								int inputSize=args[0].resultMetadata.size;
+								if(inputSize==-1) throw string()+"internal error: input size not defined";
+								
+								int start=args[1].integerConstantValue;
+								int end_=start+1;
+								if(args.size()>2) end_=args[2].integerConstantValue;
+								
+								if(start<0 || start>=inputSize)
+								{
+									throw string()+"bit range start out of range: "+std::to_string(start)+" (size="+std::to_string(inputSize)+")";
+								}
+								if(end_<=0 || end_>inputSize)
+								{
+									throw string()+"bit range end out of range: "+std::to_string(end_)+" (size="+std::to_string(inputSize)+")";
+								}
+								if(start>=end_)
+								{
+									throw string()+"invalid bit range: start and end are in an invalid order: "
+										+"["+std::to_string(start)+":"+std::to_string(end_)+"] (size="+std::to_string(inputSize)+")";
+								}
+								
+								vector<int> indexingVector=vector<int>{start,end_};
+								
+								return InputExpression(operationIndex,vector<InputExpression>{args[0]},indexingVector,InputExpression::ValueMetadata(end_-start));
+							},-1,false),
+							[this](const vector<BitOriginVector>& args,const vector<int>& intArgs)->BitOriginVector
+							{
+								return args[0].subVector(intArgs);
+							}
+						));
+					addOperation(operationIndex,
+						Operation(
+							Operation::Type::binaryOperator,
+							ParserFunction("*",[this,operationIndex](const vector<InputExpression>& args)->InputExpression
+							{
+								if(!args[0].isBitArray())
+								{
+									throw string()+"expected bit array for repetition";
+								}
+								if(!args[1].isIntegerConstant())
+								{
+									throw string()+"expected integer constant for repetition";
+								}
+								
+								int a=args[0].resultMetadata.size;
+								int b=args[1].integerConstantValue;
+								
+								if(b==0)
+								{
+									throw string()+"invalid repetition factor: "+std::to_string(b);
+								}
+								
+								SafeInteger aSize(a);
+								SafeInteger bRepetitions(b);
+								if((bRepetitions<SafeInteger(0)).getValue())
+								{
+									bRepetitions=-bRepetitions;
+								}
+								int outputSize=(aSize*bRepetitions).getValue();
+								
+								return InputExpression(operationIndex,vector<InputExpression>{args[0]},vector<int>{b},InputExpression::ValueMetadata(outputSize));
+							}),
+							[this](const vector<BitOriginVector>& args,const vector<int>& intArgs)->BitOriginVector
+							{
+								return BitOriginVector::repeat(args[0],intArgs[0]);
+							}
+						));
+					addOperation(operationIndex,
+						Operation(
+							Operation::Type::binaryOperator,
+							ParserFunction("%",[this,operationIndex](const vector<InputExpression>& args)->InputExpression
+							{
+								if(!args[0].isBitArray())
+								{
+									throw string()+"expected bit array for transposition";
+								}
+								if(!args[1].isIntegerConstant())
+								{
+									throw string()+"expected integer constant for transposition";
+								}
+								
+								int a=args[0].resultMetadata.size;
+								int b=args[1].integerConstantValue;
+								
+								if(b<0)
+								{
+									throw string()+"invalid transposition size: arraysize="
+										+std::to_string(a)+" matrixwidth="+std::to_string(b)
+										+" ("+std::to_string(b)+" is negative"+")";
+								}
+								if(b==0 || b>a || a%b!=0)
+								{
+									throw string()+"invalid transposition size: arraysize="
+										+std::to_string(a)+" matrixwidth="+std::to_string(b)
+										+" ("+std::to_string(a)+" is not divisible by "+std::to_string(b)+")";
+								}
+								
+								int outputSize=a;
+								
+								return InputExpression(operationIndex,vector<InputExpression>{args[0]},vector<int>{b},InputExpression::ValueMetadata(outputSize));
+							}),
+							[this](const vector<BitOriginVector>& args,const vector<int>& intArgs)->BitOriginVector
+							{
+								return BitOriginVector::transpose(args[0],intArgs[0]);
+							}
+						));
+					addOperation(operationIndex,
+						Operation(
+							Operation::Type::binaryOperator,
+							ParserFunction("+",[this,operationIndex](const vector<InputExpression>& args)->InputExpression
+							{
+								if(!args[0].isBitArray() || !args[1].isBitArray())
+								{
+									throw string()+"expected bit arrays for concatenation";
+								}
+								
+								int a=args[0].resultMetadata.size;
+								int b=args[1].resultMetadata.size;
+								
+								int outputSize=(SafeInteger(a)+SafeInteger(b)).getValue();
+								
+								return InputExpression(operationIndex,args,vector<int>(),InputExpression::ValueMetadata(outputSize));
+							}),
+							[this](const vector<BitOriginVector>& args,const vector<int>& intArgs)->BitOriginVector
+							{
+								return BitOriginVector::concatenate(args[0],args[1]);
+							}
+						));
+					
+					parser=Parser(operations);
+				}
+				
+				InputExpression parse(const string& expressionString,const vector<Component::Variable>& variables,int expectedSize)
+				{
+					InputExpression expression=parser.evaluate(expressionString,variables);
+					
+					if(expression.type==InputExpression::Type::none)
+					{
+						throw string()+"internal error: input expression of type none after parsing";
+					}
+					
+					if(expression.type==InputExpression::Type::integerConstant)
+					{
+						expression.resultMetadata=InputExpression::ValueMetadata(expectedSize);
+					}
+					else if(expression.resultMetadata.size!=expectedSize)
+					{
+						throw string()+"input expression size ("+std::to_string(expression.resultMetadata.size)
+							+") does not match the expected size for the component parameter ("
+							+std::to_string(expectedSize)+")";
+					}
+					return expression;
+				}
+				BitOriginVector evaluate(const InputExpression& expression)
+				{
+					if(expression.type==InputExpression::Type::integerConstant)
+					{
+						return BitOriginVector(expression.resultMetadata.size,expression.integerConstantValue);
+					}
+					if(expression.type==InputExpression::Type::variable)
+					{
+						return BitOriginVector(expression);
+					}
+					if(expression.type==InputExpression::Type::operation)
+					{
+						if(expression.operationIndex<0 || expression.operationIndex>=operations.size())
+						{
+							throw string()+"internal error: input expression operation index out of range";
+						}
+						
+						vector<BitOriginVector> args;
+						for(int i=0;i<expression.operationArguments.size();i++)
+						{
+							args.emplace_back(evaluate(expression.operationArguments[i]));
+						}
+						
+						return operations[expression.operationIndex].evaluatorFunction(args,expression.operationIntegerArguments);
+					}
+					else
+					{
+						throw string()+"internal error: input expression of invalid type";
+					}
+				}
+			};
+			
+			InputExpressionEvaluator inputExpressionEvaluator;
+			
+			InputExpression parseInputExpression(const string& expressionString,const vector<Component::Variable>& variables,int expectedSize,int lineIndex)
+			{
+				try
+				{
+					return inputExpressionEvaluator.parse(expressionString,variables,expectedSize);
+				}
+				catch(const string& str)
+				{
+					throw errorString(string()+"Error in input expression parsing: "+str+"\nThe expression is: "+expressionString,lineIndex);
+				}
+			}
+			InputExpressionEvaluator::BitOriginVector evaluateInputExpression(const InputExpression& expression,int lineIndex)
+			{
+				try
+				{
+					return inputExpressionEvaluator.evaluate(expression);
+				}
+				catch(const string& str)
+				{
+					throw errorString(string()+"Error in input expression evaluation: "+str,lineIndex);
 				}
 			}
 			
@@ -2155,6 +2994,8 @@ class ComputerBuilder
 				Component::Element::Type type;
 				int componentIndex=-1;
 				
+				int numberOfInstancesOfComponent=1;
+				
 				vector<int> outputSizes;
 				vector<int> inputSizes;
 				
@@ -2162,7 +3003,8 @@ class ComputerBuilder
 				
 				AssignmentLineData(){}
 				AssignmentLineData(int _lineIndex,const vector<string>& _outputs,const string& _componentName,const vector<string>& _inputs,
-					const Component::Element::Type& _type,int _componentIndex,const vector<int>& _outputSizes,const vector<int>& _inputSizes,
+					const Component::Element::Type& _type,int _componentIndex,int _numberOfInstancesOfComponent,
+					const vector<int>& _outputSizes,const vector<int>& _inputSizes,
 					const vector<int>& _outputVariableIndexes)
 				{
 					lineIndex=_lineIndex;
@@ -2171,6 +3013,7 @@ class ComputerBuilder
 					inputs=_inputs;
 					type=_type;
 					componentIndex=_componentIndex;
+					numberOfInstancesOfComponent=_numberOfInstancesOfComponent;
 					outputSizes=_outputSizes;
 					inputSizes=_inputSizes;
 					outputVariableIndexes=_outputVariableIndexes;
@@ -2207,8 +3050,25 @@ class ComputerBuilder
 							
 							if(inputs.size()<=1) throw errorString("Expected input variables",lineIndex);
 							
-							string componentName=inputs[0];
+							string componentString=inputs[0];
 							inputs.erase(inputs.begin());
+							
+							string componentName;
+							int numberOfInstancesOfComponent=1;
+							{
+								size_t asterisk=componentString.find_first_of("*");
+								if(asterisk==string::npos) componentName=componentString;
+								else
+								{
+									componentName=componentString.substr(0,asterisk);
+									string numberString=componentString.substr(asterisk+1,componentString.size()-(asterisk+1));
+									if(numberString.size()==0) throw errorString("Expected component instance count",lineIndex);
+									if(!stringToIntSimple(numberString,numberOfInstancesOfComponent) || numberOfInstancesOfComponent<=0)
+									{
+										throw errorString("Invalid component instance count",lineIndex);
+									}
+								}
+							}
 							
 							if(!isValidIdentifier(componentName)) throw errorString("Invalid component name '"+componentName+"'",lineIndex);
 							
@@ -2269,6 +3129,30 @@ class ComputerBuilder
 							if(inputs.size()!=inputSizes.size()) throw errorString("Input count does not match",lineIndex);
 							if(outputs.size()!=outputSizes.size()) throw errorString("Output count does not match",lineIndex);
 							
+							try
+							{
+								for(int i=0;i<inputSizes.size();i++)
+								{
+									inputSizes[i]=(SafeInteger(inputSizes[i])*SafeInteger(numberOfInstancesOfComponent)).getValue();
+								}
+							}
+							catch(const string& str)
+							{
+								throw errorString("Component input size out of range: "+str,lineIndex);
+							}
+							
+							try
+							{
+								for(int i=0;i<outputSizes.size();i++)
+								{
+									outputSizes[i]=(SafeInteger(outputSizes[i])*SafeInteger(numberOfInstancesOfComponent)).getValue();
+								}
+							}
+							catch(const string& str)
+							{
+								throw errorString("Component output size out of range: "+str,lineIndex);
+							}
+							
 							vector<int> outputVariableIndexes;
 							
 							for(int i=0;i<outputs.size();i++)
@@ -2322,7 +3206,7 @@ class ComputerBuilder
 							}
 							
 							assignmentLines.emplace_back(lineIndex,outputs,componentName,inputs,
-								elementType,componentIndex,outputSizes,inputSizes,outputVariableIndexes);
+								elementType,componentIndex,numberOfInstancesOfComponent,outputSizes,inputSizes,outputVariableIndexes);
 						}
 					}
 					
@@ -2343,109 +3227,9 @@ class ComputerBuilder
 						{
 							string str=assignmentLine.inputs[i];
 							
-							if(str.size()>0)
-							{
-								if(str[0]>='0' && str[0]<='9' || str[0]=='-')
-								{
-									int constant=0;
-									
-									try
-									{
-										size_t p=0;
-										constant=std::stoi(str,&p,0);
-										if(p!=str.size()) throw 1;
-									}
-									catch(...)
-									{
-										throw errorString(string()+"Invalid integer constant '"+str+"'",lineIndex);
-									}
-									
-									int inputSize=assignmentLine.inputSizes[i];
-									
-									if(inputSize<32)
-									{
-										int minimumSignedNegative=-(uint32_t(1)<<(inputSize-1));
-										int maximumUnsignedPositive=(uint32_t(1)<<inputSize)-1;
-										
-										if(constant<minimumSignedNegative || constant>maximumUnsignedPositive)
-										{
-											throw errorString(string()+"Integer constant '"+str+"' out of range for this input of component",lineIndex);
-										}
-									}
-									
-									elementInputs.emplace_back(true,constant,0,inputSize);
-									
-									continue;
-								}
-							}
+							InputExpression inputExpression=parseInputExpression(str,component.variables,assignmentLine.inputSizes[i],assignmentLine.lineIndex);
 							
-							int offset=0;
-							int size=-1;
-							
-							string name=str;
-							
-							size_t bracket=str.find_first_of("[");
-							if(bracket!=string::npos)
-							{
-								name=str.substr(0,bracket);
-								
-								if(str.back()!=']') throw errorString("Expected ']'",lineIndex);
-								
-								string bracketContent=str.substr(bracket+1,(str.size()-1)-(bracket+1));
-								
-								vector<string> numbers=splitStringAtColons(bracketContent);
-								
-								if(numbers.size()==0) throw errorString("Expected bit index or range inside '[]'",lineIndex);
-								
-								if(numbers[0].size()==0) throw errorString("Empty bit index",lineIndex);
-								if(!stringToIntSimple(numbers[0],offset)) throw errorString(string()+"Invalid bit index '"+numbers[0]+"'",lineIndex);
-								if(offset<0) throw errorString(string()+"Negative bit index: "+numbers[0],lineIndex);
-								
-								size=1;
-								if(numbers.size()>1)
-								{
-									int offsetB=0;
-									if(numbers[1].size()==0) throw errorString("Empty bit range end",lineIndex);
-									if(!stringToIntSimple(numbers[1],offsetB)) throw errorString(string()+"Invalid bit range end '"+numbers[1]+"'",lineIndex);
-									
-									size=offsetB-offset;
-									
-									if(size<=0) throw errorString(string()+"Invalid bit range: ["+numbers[0]+":"+numbers[1]+"]",lineIndex);
-								}
-								
-								if(numbers.size()>2) throw errorString("Too many arguments for bit range",lineIndex);
-							}
-							
-							if(!isValidIdentifier(name)) throw errorString(string()+"Input variable name not valid: '"+name+"'",lineIndex);
-							
-							int variableIndex=findWithName(component.variables,name);
-							if(variableIndex==-1) throw errorString(string()+"Input variable not declared: '"+name+"'",lineIndex);
-							
-							int variableSize=component.variables[variableIndex].sizeInBits;
-							if(size==-1) size=variableSize;
-							
-							
-							if(offset+size>variableSize)
-							{
-								throw errorString(string()+"Bit range out of range of variable: "
-									+name+"["+std::to_string(offset)+":"+std::to_string(offset+size)+"]",lineIndex);
-							}
-							
-							if(size!=assignmentLine.inputSizes[i])
-							{
-								throw errorString(string()+"Input argument size does not match the component parameter size: "
-									+name+"["+std::to_string(offset)+":"+std::to_string(offset+size)+"]"
-									+" -> "+std::to_string(size)+"!="+std::to_string(assignmentLine.inputSizes[i]),lineIndex);
-							}
-							
-							
-							if(component.variables[variableIndex].type==Component::Variable::Type::output)
-							{
-								throw errorString(string()+"Invalid use of output variable as input: '"+name+"'",lineIndex);
-							}
-							
-							
-							elementInputs.emplace_back(false,variableIndex,offset,assignmentLine.inputSizes[i]);
+							elementInputs.emplace_back(inputExpression);
 						}
 						
 						for(int e=0;e<component.elements.size();e++)
@@ -2468,6 +3252,7 @@ class ComputerBuilder
 							assignmentLine.type,
 							assignmentLine.type==Component::Element::Type::component ? assignmentLine.componentName : string(),
 							assignmentLine.componentIndex,
+							assignmentLine.numberOfInstancesOfComponent,
 							elementOutputs,
 							elementInputs,
 							lineIndex
@@ -2602,36 +3387,34 @@ class ComputerBuilder
 				}
 			};
 			
-			vector<ComputerData::Input> getComputerInputs(const Component& component,const ComponentContext& context,const Component::Element::Input& elementInput)
+			vector<ComputerData::Input> getComputerInputs(const Component& component,const ComponentContext& context,
+				const Component::Element& element,const Component::Element::Input& elementInput)
 			{
 				vector<ComputerData::Input> computerInputs;
 				
-				if(elementInput.isConstant)
+				InputExpressionEvaluator::BitOriginVector bitOriginVector=evaluateInputExpression(elementInput.expression.get(),element.lineIndex);
+				
+				for(int i=0;i<bitOriginVector.content.size();i++)
 				{
-					for(int i=0;i<elementInput.sizeInBits;i++)
+					InputExpressionEvaluator::BitOrigin& bitOrigin=bitOriginVector.content[i];
+					
+					if(bitOrigin.type==InputExpressionEvaluator::BitOrigin::Type::constant)
 					{
-						int bit=0;
-						if(i<64) bit=(uint64_t(elementInput.constantValue)>>i)&1;
+						int bit=(uint32_t(bitOrigin.constantValue))&1;
 						computerInputs.emplace_back(ComputerData::Input::Type::constant,bit);
 					}
-				}
-				else
-				{
-					const Component::Variable& variable=component.variables[elementInput.variableIndex];
-					const VariableData& variableData=context.variables[elementInput.variableIndex];
-					
-					if(variable.type==Component::Variable::Type::reg)
+					else if(bitOrigin.type==InputExpressionEvaluator::BitOrigin::Type::variable)
 					{
-						for(int i=0;i<elementInput.sizeInBits;i++)
+						const Component::Variable& variable=component.variables[bitOrigin.variableIndex];
+						const VariableData& variableData=context.variables[bitOrigin.variableIndex];
+						
+						if(variable.type==Component::Variable::Type::reg)
 						{
-							computerInputs.push_back(variableData.computerMemoryInputs[elementInput.variableOffsetInBits+i]);
+							computerInputs.push_back(variableData.computerMemoryInputs[bitOrigin.variableBitIndex]);
 						}
-					}
-					else
-					{
-						for(int i=0;i<elementInput.sizeInBits;i++)
+						else
 						{
-							computerInputs.push_back(variableData.computerInputs[elementInput.variableOffsetInBits+i]);
+							computerInputs.push_back(variableData.computerInputs[bitOrigin.variableBitIndex]);
 						}
 					}
 				}
@@ -2724,8 +3507,8 @@ class ComputerBuilder
 					
 					if(element.type==Component::Element::Type::nand)
 					{
-						vector<ComputerData::Input> inputsA=getComputerInputs(component,context,element.inputs[0]);
-						vector<ComputerData::Input> inputsB=getComputerInputs(component,context,element.inputs[1]);
+						vector<ComputerData::Input> inputsA=getComputerInputs(component,context,element,element.inputs[0]);
+						vector<ComputerData::Input> inputsB=getComputerInputs(component,context,element,element.inputs[1]);
 						
 						vector<ComputerData::Input> inputsC;
 						
@@ -2745,34 +3528,61 @@ class ComputerBuilder
 					}
 					else if(element.type==Component::Element::Type::set)
 					{
-						vector<ComputerData::Input> inputs=getComputerInputs(component,context,element.inputs[0]);
+						vector<ComputerData::Input> inputs=getComputerInputs(component,context,element,element.inputs[0]);
 						
 						setVariableInputs(computer,context,element.outputs[0].variableIndex,inputs);
 					}
 					else if(element.type==Component::Element::Type::concat)
 					{
-						vector<ComputerData::Input> inputs=getComputerInputs(component,context,element.inputs[0]);
-						vector<ComputerData::Input> inputsToConcatenate=getComputerInputs(component,context,element.inputs[1]);
+						vector<ComputerData::Input> inputsA=getComputerInputs(component,context,element,element.inputs[0]);
+						vector<ComputerData::Input> inputsB=getComputerInputs(component,context,element,element.inputs[1]);
 						
-						inputs.insert(inputs.end(),inputsToConcatenate.begin(),inputsToConcatenate.end());
+						vector<ComputerData::Input> inputsC;
 						
-						setVariableInputs(computer,context,element.outputs[0].variableIndex,inputs);
+						int inputsAwidth=inputsA.size()/element.numberOfInstances;
+						int inputsBwidth=inputsB.size()/element.numberOfInstances;
+						for(int i=0;i<element.numberOfInstances;i++)
+						{
+							inputsC.insert(inputsC.end(),inputsA.begin()+i*inputsAwidth,inputsA.begin()+(i+1)*inputsAwidth);
+							inputsC.insert(inputsC.end(),inputsB.begin()+i*inputsBwidth,inputsB.begin()+(i+1)*inputsBwidth);
+						}
+						
+						setVariableInputs(computer,context,element.outputs[0].variableIndex,inputsC);
 					}
 					else if(element.type==Component::Element::Type::component)
 					{
 						vector<vector<ComputerData::Input>> inputs;
 						for(int i=0;i<element.inputs.size();i++)
 						{
-							inputs.push_back(getComputerInputs(component,context,element.inputs[i]));
+							inputs.push_back(getComputerInputs(component,context,element,element.inputs[i]));
 						}
 						
-						ComponentContext subcontext(context,inputs,element.lineIndex);
+						vector<vector<ComputerData::Input>> outputs(element.outputs.size());
 						
-						compileComponent(computer,element.componentIndex,subcontext);
+						for(int i=0;i<element.numberOfInstances;i++)
+						{
+							vector<vector<ComputerData::Input>> instanceInputs(inputs.size());
+							for(int j=0;j<inputs.size();j++)
+							{
+								instanceInputs[j]=vector<ComputerData::Input>(
+									inputs[j].begin()+i*(inputs[j].size()/element.numberOfInstances),
+									inputs[j].begin()+(i+1)*(inputs[j].size()/element.numberOfInstances)
+									);
+							}
+							
+							ComponentContext subcontext(context,instanceInputs,element.lineIndex);
+							
+							compileComponent(computer,element.componentIndex,subcontext);
+							
+							for(int j=0;j<element.outputs.size();j++)
+							{
+								outputs[j].insert(outputs[j].end(),subcontext.outputs[j].begin(),subcontext.outputs[j].end());
+							}
+						}
 						
 						for(int i=0;i<element.outputs.size();i++)
 						{
-							setVariableInputs(computer,context,element.outputs[i].variableIndex,subcontext.outputs[i]);
+							setVariableInputs(computer,context,element.outputs[i].variableIndex,outputs[i]);
 						}
 					}
 				}
