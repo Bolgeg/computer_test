@@ -1,13 +1,4 @@
-<NAME=not>1:
-
-output: out
-input: in
-
-output=<NAME> input
-
-
-
-<NAME=not><N=2...32>:
+<NAME=not><N=1...32>:
 
 output: out <N>
 input: in <N>
@@ -16,664 +7,532 @@ output=<NAME>*<N> input
 
 
 
-<NAME=nand,and,or,xor,nor,andnot>1:
-
-output: out
-inputA: in
-inputB: in
-
-output=<NAME> inputA inputB
-
-
-
-<NAME=nand,and,or,xor,nor,andnot><N=2...32>:
+<NAME=nand,and,or,xor,nor,andnot><N=1...32>:
 
 output: out <N>
 inputA: in <N>
 inputB: in <N>
 
-a=<NAME><N-1> inputA[0:<N-1>] inputB[0:<N-1>]
-b=<NAME>1 inputA[<N-1>] inputB[<N-1>]
-output=concat<N-1>_1 a b
+output=<NAME>*<N> inputA inputB
 
 
 
-<NAME=nand,and,or,xor,nor,andnot>P0:
-
-output: out
-inputA: in
-inputB: in
-
-output=<NAME> inputA inputB
-
-
-
-notP0:
-
-output: out
-input: in
-
-output=not input
-
-
-
-notP<P=1...24>:
+notP<P=0...24>:
 
 output: out <2**P>
 input: in <2**P>
 
-a=notP<P-1> input[0:<2**P/2>]
-b=notP<P-1> input[<2**P/2>:<2**P>]
-output=concat<2**P/2>_<2**P/2> a b
+output=not*<2**P> input
 
 
 
-<NAME=nand,and,or,xor,nor,andnot>P<P=1...24>:
+<NAME=nand,and,or,xor,nor,andnot>P<P=0...24>:
 
 output: out <2**P>
 inputA: in <2**P>
 inputB: in <2**P>
 
-a=<NAME>P<P-1> inputA[0:<2**P/2>] inputB[0:<2**P/2>]
-b=<NAME>P<P-1> inputA[<2**P/2>:<2**P>] inputB[<2**P/2>:<2**P>]
-output=concat<2**P/2>_<2**P/2> a b
+output=<NAME>*<2**P> inputA inputB
 
 
 
-<NAME=andABC,orABC,xorABC>1:
-
-output: out
-inputA: in
-inputB: in
-inputC: in
-
-output=<NAME> inputA inputB inputC
-
-
-
-<NAME=andABC,orABC,xorABC><N=2...32>:
+<NAME=andABC,orABC,xorABC><N=1...32>:
 
 output: out <N>
 inputA: in <N>
 inputB: in <N>
 inputC: in <N>
 
-a=<NAME><N-1> inputA[0:<N-1>] inputB[0:<N-1>] inputC[0:<N-1>]
-b=<NAME>1 inputA[<N-1>] inputB[<N-1>] inputC[<N-1>]
-output=concat<N-1>_1 a b
+output=<NAME>*<N> inputA inputB inputC
 
 
 
 not:
 
-output: out
-input: in
+o: out
+i: in
 
-output=nand input input
+o=nand i i
 
 
 
 and:
 
-output: out
-inputA: in
-inputB: in
+o: out
+ia: in
+ib: in
 
-a=nand inputA inputB
-output=not a
+a=nand ia ib
+o=not a
 
 
 
 or:
 
-output: out
-inputA: in
-inputB: in
+o: out
+ia: in
+ib: in
 
-a=not inputA
-b=not inputB
-output=nand a b
+a=not ia
+b=not ib
+o=nand a b
 
 
 
 xor:
 
 o: out
-a: in
-b: in
+ia: in
+ib: in
 
-c=nand a b
-d=nand c a
-e=nand c b
-o=nand d e
+a=nand ia ib
+b=nand a ia
+c=nand a ib
+o=nand b c
 
 
 
 nor:
 
-output: out
-inputA: in
-inputB: in
+o: out
+ia: in
+ib: in
 
-a=or inputA inputB
-output=not a
+a=or ia ib
+o=not a
 
 
 
 andnot:
 
-output: out
-inputA: in
-inputB: in
+o: out
+ia: in
+ib: in
 
-inputB_not=not inputB
-output=and inputA inputB_not
+ib_not=not ib
+o=and ia ib_not
 
 
 
 <NAME=and,or,xor>ABC:
 
-output: out
+o: out
 
-inputA: in
-inputB: in
-inputC: in
+ia: in
+ib: in
+ic: in
 
-a=<NAME> inputA inputB
-output=<NAME> a inputC
-
-
-
-add:
-
-output: out
-outputCarry: out
-
-inputA: in
-inputB: in
-inputC: in
-
-output=xorABC inputA inputB inputC
-
-a=not inputA
-b=andABC a inputB inputC
-c=or inputB inputC
-d=and inputA c
-outputCarry=or b d
+a=<NAME> ia ib
+o=<NAME> a ic
 
 
 
 add1:
 
-output: out
-outputCarry: out
+o: out
+o_carry: out
 
-inputA: in
-inputB: in
-inputC: in
+ia: in
+ib: in
+ic: in
 
-output outputCarry=add inputA inputB inputC
+o=xorABC ia ib ic
 
-
-
-add<N=2...16>:
-
-output: out <N>
-outputCarry: out
-
-inputA: in <N>
-inputB: in <N>
-inputCarry: in
-
-a carry=add<N-1> inputA[0:<N-1>] inputB[0:<N-1>] inputCarry
-b outputCarry=add1 inputA[<N-1>] inputB[<N-1>] carry
-output=concat<N-1>_1 a b
+a=not ia
+b=andABC a ib ic
+c=or ib ic
+d=and ia c
+o_carry=or b d
 
 
 
-inc:
+add<N=2...32>:
 
-output: out
-outputCarry: out
+o: out <N>
+o_carry: out
 
-input: in
-inputCarry: in
+ia: in <N>
+ib: in <N>
+i_carry: in
 
-a=or input inputCarry
-b=nand input inputCarry
-output=and a b
-outputCarry=not b
+a carry=add<N-1> ia[0:<N-1>] ib[0:<N-1>] i_carry
+b o_carry=add1 ia[<N-1>] ib[<N-1>] carry
+o=set<N> a+b
 
 
 
 inc1:
 
-output: out
-outputCarry: out
+o: out
+o_carry: out
 
-input: in
-inputCarry: in
+i: in
+i_carry: in
 
-output outputCarry=inc input inputCarry
+a=or i i_carry
+b=nand i i_carry
+o=and a b
+o_carry=not b
 
 
 
 inc<N=2...32>:
 
-output: out <N>
-outputCarry: out
+o: out <N>
+o_carry: out
 
-input: in <N>
-inputCarry: in
+i: in <N>
+i_carry: in
 
-a carry=inc<N-1> input[0:<N-1>] inputCarry
-b outputCarry=inc input[<N-1>] carry
-output=concat<N-1>_1 a b
+a carry=inc<N-1> i[0:<N-1>] i_carry
+b o_carry=inc1 i[<N-1>] carry
+o=set<N> a+b
 
 
 
 notzero1:
 
-output: out
+o: out
 
-input: in
+i: in
 
-output=set input
+o=set i
 
 
 
-notzero<S=2...16>:
+notzero<S=2...32>:
 
-output: out
+o: out
 
-input: in <S>
+i: in <S>
 
-a=notzero<S-1> input[0:<S-1>]
-output=or a input[<S-1>]
+a=notzero<S-1> i[0:<S-1>]
+o=or a i[<S-1>]
 
 
 
 notzeroP0:
 
-output: out
+o: out
 
-input: in
+i: in
 
-output=set input
+o=set i
 
 
 
-notzeroP<SIZEP=1...16>:
+notzeroP<SIZEP=1...24>:
 
-output: out
+o: out
 
-input: in <2**SIZEP>
+i: in <2**SIZEP>
 
-a=notzeroP<SIZEP-1> input[0:<2**SIZEP/2>]
-b=notzeroP<SIZEP-1> input[<2**SIZEP/2>:<2**SIZEP>]
-output=or a b
+a=notzeroP<SIZEP-1> i[0:<2**SIZEP/2>]
+b=notzeroP<SIZEP-1> i[<2**SIZEP/2>:<2**SIZEP>]
+o=or a b
 
 
 
-bitShiftLeft1_<N=2...16>:
+bitShiftLeft<N=1...31>_<S=2...32>:
+<?(N<S)>
 
-output: out <N>
-outputOverflow: out
+o: out <S>
+o_overflow: out
 
-input: in <N>
+i: in <S>
 
-a=set<N-1> input[0:<N-1>]
-output=concat1_<N-1> 0 a
-outputOverflow=set input[<N-1>]
+a=set<S-N> i[0:<S-N>]
+b=set<N> i[<S-N>:<S>]
+o=concat<N>_<S-N> 0 a
+o_overflow=notzero<N> b
 
 
 
-bitShiftRightUnsigned1_<N=2...16>:
+bitShiftRightUnsigned<N=1...31>_<S=2...32>:
+<?(N<S)>
 
-output: out <N>
-outputOverflow: out
+o: out <S>
+o_overflow: out
 
-input: in <N>
+i: in <S>
 
-a=set<N-1> input[1:<N>]
-output=concat<N-1>_1 a 0
-outputOverflow=set input[0]
+a=set<S-N> i[<N>:<S>]
+b=set<N> i[0:<N>]
+o=concat<S-N>_<N> a 0
+o_overflow=notzero<N> b
 
 
 
-bitShiftRightSigned1_<N=2...16>:
+bitShiftRightSigned<N=1...31>_<S=2...32>:
+<?(N<S)>
 
-output: out <N>
-outputOverflow: out
+o: out <S>
+o_overflow: out
 
-input: in <N>
+i: in <S>
 
-a=set<N-1> input[1:<N>]
-output=concat<N-1>_1 a input[<N-1>]
-outputOverflow=set input[0]
+a=set<S-N> i[<N>:<S>]
+b=set<N> i[0:<N>]
+o=concat<S-N>_<N> a i[<S-1>]*<N>
+o_overflow=notzero<N> b
 
 
 
-<NAME=bitShiftLeft,bitShiftRightUnsigned,bitShiftRightSigned><SHIFT=2...15>_<N=2...16>:
+bitShiftLeftP<NP=0...23>_P<SP=1...24>:
+<?(NP<SP)>
 
-output: out <N>
-outputOverflow: out
+o: out <2**SP>
+o_overflow: out
 
-input: in <N>
+i: in <2**SP>
 
-a overflowA=<NAME><SHIFT-1>_<N> input
-output overflowB=<NAME>1_<N> a
-outputOverflow=or overflowA overflowB
+a=set<2**SP-2**NP> i[0:<2**SP-2**NP>]
+b=set<2**NP> i[<2**SP-2**NP>:<2**SP>]
+o=concat<2**NP>_<2**SP-2**NP> 0 a
+o_overflow=notzeroP<NP> b
 
 
 
-bitShiftLeft1_P<P=1...16>:
+bitShiftRightUnsignedP<NP=0...23>_P<SP=1...24>:
+<?(NP<SP)>
 
-output: out <2**P>
-outputOverflow: out
+o: out <2**SP>
+o_overflow: out
 
-input: in <2**P>
+i: in <2**SP>
 
-a=set<2**P-1> input[0:<2**P-1>]
-output=concat1_<2**P-1> 0 a
-outputOverflow=set input[<2**P-1>]
+a=set<2**SP-2**NP> i[<2**NP>:<2**SP>]
+b=set<2**NP> i[0:<2**NP>]
+o=concat<2**SP-2**NP>_<2**NP> a 0
+o_overflow=notzeroP<NP> b
 
 
 
-bitShiftRightUnsigned1_P<P=1...16>:
+bitShiftRightSignedP<NP=0...23>_P<SP=1...24>:
+<?(NP<SP)>
 
-output: out <2**P>
-outputOverflow: out
+o: out <2**SP>
+o_overflow: out
 
-input: in <2**P>
+i: in <2**SP>
 
-a=set<2**P-1> input[1:<2**P>]
-output=concat<2**P-1>_1 a 0
-outputOverflow=set input[0]
+a=set<2**SP-2**NP> i[<2**NP>:<2**SP>]
+b=set<2**NP> i[0:<2**NP>]
+o=concat<2**SP-2**NP>_<2**NP> a i[<2**SP-1>]*<2**NP>
+o_overflow=notzeroP<NP> b
 
 
 
-bitShiftRightSigned1_P<P=1...16>:
+<NAME=bitShiftLeft,bitShiftRightUnsigned,bitShiftRightSigned>N_P<SP=1...24>_step<T=0>:
 
-output: out <2**P>
-outputOverflow: out
+o: out <2**SP>
+o_overflow: out
 
-input: in <2**P>
+i: in <2**SP>
+i_shift: in <SP>
+i_shift_not: in <SP>
 
-a=set<2**P-1> input[1:<2**P>]
-output=concat<2**P-1>_1 a input[<2**P-1>]
-outputOverflow=set input[0]
+b b_overflow=<NAME>P<T>_P<SP> i
+o=selector*<2**SP> i_shift_not[<T>]*<2**SP> i_shift[<T>]*<2**SP> i b
+o_overflow=and i_shift[<T>] b_overflow
 
 
 
-bitShiftLeftP<SHIFTP=0...15>_P<SIZEP=1...16>:
-<?(SHIFTP<SIZEP)>
+<NAME=bitShiftLeft,bitShiftRightUnsigned,bitShiftRightSigned>N_P<SP=1...24>_step<T=1...23>:
+<?(T<SP)>
 
-output: out <2**SIZEP>
-outputOverflow: out
+o: out <2**SP>
+o_overflow: out
 
-input: in <2**SIZEP>
+i: in <2**SP>
+i_shift: in <SP>
+i_shift_not: in <SP>
 
-output=concat<2**SHIFTP>_<2**SIZEP-2**SHIFTP> 0 input[0:<2**SIZEP-2**SHIFTP>]
-outputOverflow=notzeroP<SHIFTP> input[<2**SIZEP-2**SHIFTP>:<2**SIZEP>]
+a a_overflow=<NAME>N_P<SP>_step<T-1> i i_shift i_shift_not
+b b_overflow=<NAME>P<T>_P<SP> a
+o=selector*<2**SP> i_shift_not[<T>]*<2**SP> i_shift[<T>]*<2**SP> a b
+c_overflow=or a_overflow b_overflow
+o_overflow=selector i_shift_not[<T>] i_shift[<T>] a_overflow c_overflow
 
 
 
-bitShiftRightUnsignedP<SHIFTP=0...15>_P<SIZEP=1...16>:
-<?(SHIFTP<SIZEP)>
+<NAME=bitShiftLeft,bitShiftRightUnsigned,bitShiftRightSigned>N_P<SP=1...24>_preComputedData:
 
-output: out <2**SIZEP>
-outputOverflow: out
+o: out <2**SP>
+o_overflow: out
 
-input: in <2**SIZEP>
+i: in <2**SP>
+i_shift: in <SP>
+i_shift_not: in <SP>
 
-output=concat<2**SIZEP-2**SHIFTP>_<2**SHIFTP> input[0:<2**SIZEP-2**SHIFTP>] 0
-outputOverflow=notzeroP<SHIFTP> input[0:<2**SHIFTP>]
+o o_overflow=<NAME>N_P<SP>_step<SP-1> i i_shift i_shift_not
 
 
 
-bitShiftRightSignedP<SHIFTP=0...15>_P<SIZEP=1...16>:
-<?(SHIFTP<SIZEP)>
+<NAME=bitShiftLeft,bitShiftRightUnsigned,bitShiftRightSigned>N_P<SP=1...24>:
 
-output: out <2**SIZEP>
-outputOverflow: out
+o: out <2**SP>
+o_overflow: out
 
-input: in <2**SIZEP>
+i: in <2**SP>
+i_shift: in <SP>
 
-extendedSign=fanOutP<SHIFTP> input[<2**SIZEP-1>]
-output=concat<2**SIZEP-2**SHIFTP>_<2**SHIFTP> input[<2**SHIFTP>:<2**SIZEP>] extendedSign
-outputOverflow=notzeroP<SHIFTP> input[0:<2**SHIFTP>]
+shift_not=not*<SP> i_shift
+o o_overflow=<NAME>N_P<SP>_preComputedData i i_shift shift_not
 
 
 
-<NAME=bitShiftLeft,bitShiftRightUnsigned,bitShiftRightSigned>N_P<P=1...16>_step1:
+wordShift<DIR=Left,RightUnsigned,RightSigned>N_P<SIZEP=1...24>_wordP<WORDP=0...6>:
+<?(SIZEP+WORDP<=24)>
 
-output: out <2**P>
-outputOverflow: out
+o: out <2**(SIZEP+WORDP)>
 
-inputA: in <2**P>
-inputB: in
+i_value: in <2**(SIZEP+WORDP)>
+i_shift: in <SIZEP>
 
-b overflowB=<NAME>1_P<P> inputA
-output=ternaryOperatorP<P> inputB[0] inputA b
-outputOverflow=and overflowB inputB[0]
+shift_not=not<SIZEP> i_shift
+value=set<2**(SIZEP+WORDP)> i_value%<2**WORDP>
+_o _=bitShift<DIR>N_P<SIZEP>_preComputedData*<2**WORDP> value i_shift*<2**WORDP> shift_not*<2**WORDP>
+o=set<2**(SIZEP+WORDP)> _o%<2**SIZEP>
 
 
 
-<NAME=bitShiftLeft,bitShiftRightUnsigned,bitShiftRightSigned>N_P<P=1...16>_step<T=2...16>:
-<?(T<=P)>
+neg<N=1...32>:
 
-output: out <2**P>
-outputOverflow: out
+o: out <N>
 
-inputA: in <2**P>
-inputB: in <T>
+i: in <N>
 
-a overflowA=<NAME>N_P<P>_step<T-1> inputA inputB[0:<T-1>]
-b overflowB=<NAME>P<T-1>_P<P> a
-output=ternaryOperatorP<P> inputB[<T-1>] a b
-overflowB_effect=and overflowB inputB[<T-1>]
-outputOverflow=or overflowA overflowB_effect
+a=not*<N> i
+o b=inc<N> a 1
 
 
 
-<NAME=bitShiftLeft,bitShiftRightUnsigned,bitShiftRightSigned>N_P<P=1...16>:
+sub<N=1...32>:
 
-output: out <2**P>
-outputOverflow: out
+o: out <N>
+o_carry: out
 
-inputA: in <2**P>
-inputB: in <P>
+ia: in <N>
+ib: in <N>
+i_carry: in
 
-output outputOverflow=<NAME>N_P<P>_step<P> inputA inputB
+b=neg<N> ib
+o o_carry=add<N> ia b i_carry
 
 
 
-bitRotateLeftP<ROTP=0...15>_P<SIZEP=1...16>:
-<?(ROTP<SIZEP)>
+mul<S=1...32>_1:
 
-output: out <2**SIZEP>
+o: out <S>
+o_overflow: out
 
-input: in <2**SIZEP>
+ia: in <S>
+ib: in
 
-output=concat<2**ROTP>_<2**SIZEP-2**ROTP> input[<2**SIZEP-2**ROTP>:<2**SIZEP>] input[0:<2**SIZEP-2**ROTP>]
+o=and*<S> ia ib*<S>
+o_overflow=set 0
 
 
 
-bitRotateRightP<ROTP=0...15>_P<SIZEP=1...16>:
-<?(ROTP<SIZEP)>
-
-output: out <2**SIZEP>
-
-input: in <2**SIZEP>
-
-output=concat<2**SIZEP-2**ROTP>_<2**ROTP> input[<2**ROTP>:<2**SIZEP>] input[0:<2**ROTP>]
-
-
-
-<NAME=bitRotateLeft,bitRotateRight>N_P<SIZEP=1...16>_step0:
-
-output: out <2**SIZEP>
-
-inputA: in <2**SIZEP>
-inputB: in <SIZEP>
-
-b=<NAME>P0_P<SIZEP> inputA
-output=ternaryOperatorP<SIZEP> inputB[0] inputA b
-
-
-
-<NAME=bitRotateLeft,bitRotateRight>N_P<SIZEP=1...16>_step<STEP=1...15>:
-<?(SIZEP>STEP)>
-
-output: out <2**SIZEP>
-
-inputA: in <2**SIZEP>
-inputB: in <SIZEP>
-
-a=<NAME>N_P<SIZEP>_step<STEP-1> inputA inputB
-b=<NAME>P<STEP>_P<SIZEP> a
-output=ternaryOperatorP<SIZEP> inputB[<STEP>] a b
-
-
-
-<NAME=bitRotateLeft,bitRotateRight>N_P<SIZEP=1...16>:
-
-output: out <2**SIZEP>
-
-inputA: in <2**SIZEP>
-inputB: in <SIZEP>
-
-output=<NAME>N_P<SIZEP>_step<SIZEP-1> inputA inputB
-
-
-
-neg<N=1...16>:
-
-output: out <N>
-
-input: in <N>
-
-a=not<N> input
-output b=inc<N> a 1
-
-
-
-sub<N=1...16>:
-
-output: out <N>
-outputCarry: out
-
-inputA: in <N>
-inputB: in <N>
-inputCarry: in
-
-b=neg<N> inputB
-output outputCarry=add<N> inputA b inputCarry
-
-
-
-mul<S=1...16>_1:
-
-output: out <S>
-outputOverflow: out
-
-inputA: in <S>
-inputB: in
-
-b=fanOut<S> inputB
-output=and<S> inputA b
-outputOverflow=set 0
-
-
-
-mul<S=2...16>_<N=2...16>:
+mul<S=2...32>_<N=2...32>:
 <?(S>=N)>
 
-output: out <S>
-outputOverflow: out
+o: out <S>
+o_overflow: out
 
-inputA: in <S>
-inputB: in <N>
+ia: in <S>
+ib: in <N>
 
-a oa=mul<S>_<N-1> inputA inputB[0:<N-1>]
-b _=mul<S>_1 inputA inputB[<N-1>]
+a oa=mul<S>_<N-1> ia ib[0:<N-1>]
+b _=mul<S>_1 ia ib[<N-1>]
 c ob=bitShiftLeft<N-1>_<S> b
-output oc=add<S> a c 0
-outputOverflow=orABC oa ob oc
+o oc=add<S> a c 0
+o_overflow=orABC oa ob oc
 
 
 
-equal1:
+different1:
 
-output: out
+o: out
 
-inputA: in
-inputB: in
+ia: in
+ib: in
 
-different=xor inputA inputB
-output=not different
-
+o=xor ia ib
 
 
-equal<S=2...16>:
 
-output: out
+different<S=2...32>:
 
-inputA: in <S>
-inputB: in <S>
+o: out
 
-a=equal<S-1> inputA[0:<S-1>] inputB[0:<S-1>]
-b=equal1 inputA[<S-1>] inputB[<S-1>]
-output=and a b
+ia: in <S>
+ib: in <S>
+
+a=different<S-1> ia[0:<S-1>] ib[0:<S-1>]
+b=different1 ia[<S-1>] ib[<S-1>]
+o=or a b
+
+
+
+equal<S=1...32>:
+
+o: out
+
+ia: in <S>
+ib: in <S>
+
+a=different<S> ia ib
+o=not a
 
 
 
 lessThanUnsigned1:
 
-output: out
+o: out
 
-inputA: in
-inputB: in
+ia: in
+ib: in
 
-inputA_not=not inputA
-output=and inputA_not inputB
-
-
-
-lessThanUnsigned<S=2...16>:
-
-output: out
-
-inputA: in <S>
-inputB: in <S>
-
-a=lessThanUnsigned<S-1> inputA[0:<S-1>] inputB[0:<S-1>]
-b=lessThanUnsigned1 inputA[<S-1>] inputB[<S-1>]
-c=xor inputA[<S-1>] inputB[<S-1>]
-output=multiplexer c a b
+o=andnot ib ia
 
 
 
-lessThanSigned<S=2...16>:
+lessThanUnsigned<S=2...32>:
 
-output: out
+o: out
 
-inputA: in <S>
-inputB: in <S>
+ia: in <S>
+ib: in <S>
 
-bothNegative=and inputA[<S-1>] inputB[<S-1>]
-differentSigns=xor inputA[<S-1>] inputB[<S-1>]
-inputA_not=not<S> inputA
-inputB_not=not<S> inputB
-a=ternaryOperator<S-1> bothNegative inputA[0:<S-1>] inputA_not[0:<S-1>]
-b=ternaryOperator<S-1> bothNegative inputB[0:<S-1>] inputB_not[0:<S-1>]
+a=lessThanUnsigned<S-1> ia[0:<S-1>] ib[0:<S-1>]
+b=lessThanUnsigned1 ia[<S-1>] ib[<S-1>]
+c=xor ia[<S-1>] ib[<S-1>]
+o=multiplexer c a b
+
+
+
+lessThanSigned<S=2...32>:
+
+o: out
+
+ia: in <S>
+ib: in <S>
+
+bothNegative_not=nand ia[<S-1>] ib[<S-1>]
+bothNegative=not bothNegative_not
+differentSigns=xor ia[<S-1>] ib[<S-1>]
+ia_not=not*<S> ia
+ib_not=not*<S> ib
+a=selector*<S-1> bothNegative_not*<S-1> bothNegative*<S-1> ia[0:<S-1>] ia_not[0:<S-1>]
+b=selector*<S-1> bothNegative_not*<S-1> bothNegative*<S-1> ib[0:<S-1>] ib_not[0:<S-1>]
 c=lessThanUnsigned<S-1> a b
-output=ternaryOperator1 differentSigns c inputA[<S-1>]
+o=multiplexer differentSigns c ia[<S-1>]
 
 
 
-divUnsigned<S=2...16>_step<BIT=0...15>:
+divUnsigned<S=2...32>_step<BIT=0...31>:
 <?(S>BIT)>
 
 outputQuotientBit: out
@@ -692,7 +551,7 @@ outputRemainder=ternaryOperator<S> bit b a
 
 
 
-divUnsigned<S=2...16>_stepsToBit<BIT=2...16>:
+divUnsigned<S=2...32>_stepsToBit<BIT=2...32>:
 <?(S==BIT)>
 
 outputQuotient: out <S>
@@ -707,7 +566,7 @@ outputRemainder=set<S> 0
 
 
 
-divUnsigned<S=2...16>_stepsToBit<BIT=0...15>:
+divUnsigned<S=2...32>_stepsToBit<BIT=0...31>:
 <?(S>BIT)>
 
 outputQuotient: out <S>
@@ -723,7 +582,7 @@ outputQuotient=concat1_<S-1> quotientNewBit quotient[0:<S-1>]
 
 
 
-divUnsigned<S=2...16>:
+divUnsigned<S=2...32>:
 
 outputQuotient: out <S>
 outputRemainder: out <S>
@@ -736,18 +595,19 @@ outputQuotient outputRemainder=divUnsigned<S>_stepsToBit0 inputDividend inputDiv
 
 
 
-abs<S=1...16>:
+abs<S=1...32>:
 
-output: out <S>
+o: out <S>
 
-input: in <S>
+i: in <S>
 
-negated=neg<S> input
-output=ternaryOperator<S> input[<S-1>] input negated
+negated=neg<S> i
+i_lastbit_not=not i[<S-1>]
+o=selector*<S> i_lastbit_not*<S> i[<S-1>]*<S> i negated
 
 
 
-divSigned<S=2...16>:
+divSigned<S=2...32>:
 
 outputQuotient: out <S>
 outputRemainder: out <S>
@@ -786,184 +646,116 @@ output=set<2**N> input*<2**N>
 
 
 
-decoder1:
+decoder1_preComputedData:
 
-output: out 2
+o: out 2
 
-input: in
+i: in
+i_not: in
 
-input_not=not input
-output=concat1_1 input_not input
+o=set2 i_not+i
 
 
 
-decoder<P=2...4>:
+decoder<SP=2...24>_preComputedData:
 
-output: out <2**P>
+o: out <2**SP>
 
-input: in <P>
+i: in <SP>
+i_not: in <SP>
 
-previousLevel=decoder<P-1> input[0:<P-1>]
-a=ternaryOperator<2**P/2> input[<P-1>] previousLevel 0
-b=ternaryOperator<2**P/2> input[<P-1>] 0 previousLevel
-output=concat<2**P/2>_<2**P/2> a b
+previousLevel=decoder<SP-1>_preComputedData i[0:<SP-1>] i_not[0:<SP-1>]
+a=selector*<2**SP/2> i_not[<SP-1>]*<2**SP/2> i[<SP-1>]*<2**SP/2> previousLevel 0
+b=selector*<2**SP/2> i_not[<SP-1>]*<2**SP/2> i[<SP-1>]*<2**SP/2> 0 previousLevel
+o=set<2**SP> a+b
+
+
+
+decoder<SP=1...24>:
+
+o: out <2**SP>
+
+i: in <SP>
+
+i_not=not*<SP> i
+o=decoder<SP>_preComputedData i i_not
 
 
 
 multiplexer:
 
-output: out
+o: out
 
-inputControl: in
-inputA: in
-inputB: in
+i_control: in
+ia: in
+ib: in
 
-inputControlNot=not inputControl
-a=nand inputControlNot inputA
-b=nand inputControl inputB
-output=nand a b
+i_control_not=not i_control
+o=selector i_control_not i_control ia ib
 
 
 
-demultiplexer:
+ternaryOperator<S=1...32>:
 
-outputA: out
-outputB: out
+o: out <S>
 
-inputControl: in
-input: in
+i_control: in
+ia: in <S>
+ib: in <S>
 
-inputControl_not=not inputControl
-outputA=and inputControl_not input
-outputB=and inputControl input
+i_control_not=not i_control
+o=selector*<S> i_control_not*<S> i_control*<S> ia ib
 
 
 
-demultiplexer1:
+ternaryOperatorP<SP=0...16>:
 
-output: out 2
+o: out <2**SP>
 
-inputControl: in
-input: in
+i_control: in
+ia: in <2**SP>
+ib: in <2**SP>
 
-a b=demultiplexer inputControl input
-output=concat1_1 a b
+i_control_not=not i_control
+o=selector*<2**SP> i_control_not*<2**SP> i_control*<2**SP> ia ib
 
 
 
-demultiplexer<N=2...16>:
+multiplexer1_preComputedData:
 
-output: out <2**N>
+o: out
 
-inputControl: in <N>
-input: in
+i_control_not: in
+i_control: in
+i: in 2
 
-ia ib=demultiplexer inputControl[<N-1>] input
-a=demultiplexer<N-1> inputControl[0:<N-1>] ia
-b=demultiplexer<N-1> inputControl[0:<N-1>] ib
-output=concat<2**N/2>_<2**N/2> a b
+o=selector i_control_not i_control i[0] i[1]
 
 
 
-ternaryOperator<N=1...32>:
+multiplexer<SP=2...24>_preComputedData:
 
-output: out <N>
+o: out
 
-inputControl: in
-inputA: in <N>
-inputB: in <N>
+i_control_not: in <SP>
+i_control: in <SP>
+i: in <2**SP>
 
-control=fanOut<N> inputControl
-output=multiplexerArray<N> control inputA inputB
+a=multiplexer<SP-1>_preComputedData i_control_not[0:<SP-1>] i_control[0:<SP-1>] i[0:<2**SP/2>]
+b=multiplexer<SP-1>_preComputedData i_control_not[0:<SP-1>] i_control[0:<SP-1>] i[<2**SP/2>:<2**SP>]
+o=selector i_control_not[<SP-1>] i_control[<SP-1>] a b
 
 
 
-ternaryOperatorP<SIZEP=0...16>:
+multiplexer<SP=1...24>:
 
-output: out <2**SIZEP>
+o: out
 
-inputControl: in
-inputA: in <2**SIZEP>
-inputB: in <2**SIZEP>
+i_control: in <SP>
+i: in <2**SP>
 
-control=fanOutP<SIZEP> inputControl
-output=multiplexerArrayP<SIZEP> control inputA inputB
-
-
-
-multiplexerArray1:
-
-output: out
-
-inputControl: in
-inputA: in
-inputB: in
-
-output=multiplexer inputControl inputA inputB
-
-
-
-multiplexerArray<N=2...32>:
-
-output: out <N>
-
-inputControl: in <N>
-inputA: in <N>
-inputB: in <N>
-
-a=multiplexerArray<N-1> inputControl[0:<N-1>] inputA[0:<N-1>] inputB[0:<N-1>]
-b=multiplexerArray1 inputControl[<N-1>] inputA[<N-1>] inputB[<N-1>]
-output=concat<N-1>_1 a b
-
-
-
-multiplexerArrayP0:
-
-output: out
-
-inputControl: in
-inputA: in
-inputB: in
-
-output=multiplexer inputControl inputA inputB
-
-
-
-multiplexerArrayP<N=1...16>:
-
-output: out <2**N>
-
-inputControl: in <2**N>
-inputA: in <2**N>
-inputB: in <2**N>
-
-a=multiplexerArrayP<N-1> inputControl[0:<2**N/2>] inputA[0:<2**N/2>] inputB[0:<2**N/2>]
-b=multiplexerArrayP<N-1> inputControl[<2**N/2>:<2**N>] inputA[<2**N/2>:<2**N>] inputB[<2**N/2>:<2**N>]
-output=concat<2**N/2>_<2**N/2> a b
-
-
-
-multiplexer1:
-
-output: out
-
-inputControl: in
-input: in 2
-
-output=multiplexer inputControl input[0] input[1]
-
-
-
-multiplexer<N=2...16>:
-
-output: out
-
-inputControl: in <N>
-input: in <2**N>
-
-a=multiplexer<N-1> inputControl[0:<N-1>] input[0:<2**N/2>]
-b=multiplexer<N-1> inputControl[0:<N-1>] input[<2**N/2>:<2**N>]
-output=multiplexer inputControl[<N-1>] a b
+i_control_not=not*<SP> i_control
+o=multiplexer<SP>_preComputedData i_control_not i_control i
 
 
 
@@ -1077,172 +869,6 @@ output=<NAME> a inputG
 
 
 
-alu:
-
-output: out 16
-
-inputA: in 16
-inputB: in 16
-operationIndex: in 4
-
-rNot=not16 inputA
-rNeg=neg16 inputA
-rAnd=and16 inputA inputB
-rOr=or16 inputA inputB
-rXor=xor16 inputA inputB
-rShl _=bitShiftLeftN_P4 inputA inputB[0:4]
-rShr _=bitShiftRightUnsignedN_P4 inputA inputB[0:4]
-rShrs _=bitShiftRightSignedN_P4 inputA inputB[0:4]
-
-rAdd _=add16 inputA inputB 0
-rSub _=sub16 inputA inputB 0
-rMul _=mul16_16 inputA inputB
-rDiv rMod=divUnsigned16 inputA inputB
-rDivs rMods=divSigned16 inputA inputB
-
-a=chooseABCDEFGH16 operationIndex[0:3] rNot rNeg rAnd rOr rXor rShl rShr rShrs
-b=chooseABCDEFGH16 operationIndex[0:3] rAdd rSub rMul 0 rDiv rDivs rMod rMods
-output=chooseAB16 operationIndex[3] a b
-
-
-
-computerStageShiftRegisterUpdate:
-
-nextShiftRegisterValue: out 8
-
-shiftRegisterValue: in 8
-restart: in
-moveForward: in
-
-shifted _=bitShiftLeft1_8 shiftRegisterValue
-a=chooseAB8 moveForward shiftRegisterValue shifted
-nextShiftRegisterValue=chooseAB8 restart a 1
-
-
-
-getOpcodeValid:
-
-valid: out
-
-opcode: in 8
-
-a=chooseABCDEFGH1 opcode[0:3] 1 1 1 1 1 1 1 1
-b=chooseABCDEFGH1 opcode[0:3] 1 1 1 0 1 1 1 1
-c=chooseABCDEFGH1 opcode[0:3] 1 1 1 1 1 1 1 1
-d=chooseABCDEFGH1 opcode[0:3] 1 0 0 0 0 0 0 0
-o=chooseABCD1 opcode[3:5] a b c d
-insideRange=equal3 opcode[5:8] 0
-valid=and insideRange o
-
-
-
-getOpcodeUseAlu:
-
-useAlu: out
-
-valid: in
-opcode: in 8
-
-insideRange=equal4 opcode[4:8] 0
-useAlu=and valid insideRange
-
-
-
-getOpcodeAluOperationIndex:
-
-operationIndex: out 4
-
-valid: in
-opcode: in 8
-
-operationIndex=chooseAB4 valid 0 opcode[0:4]
-
-
-
-getOpcodeFirstArgumentIsOutput:
-
-output: out
-
-valid: in
-opcode: in 8
-
-a=chooseABCDEFGH8 opcode[0:3] 1 1 1 1 1 1 1 1
-b=chooseABCDEFGH8 opcode[0:3] 1 1 1 0 1 1 1 1
-c=chooseABCDEFGH8 opcode[0:3] 1 0 0 0 0 0 0 0
-d=chooseABCDEFGH8 opcode[0:3] 0 0 0 0 0 0 0 0
-o=chooseABCD8 opcode[3:5] a b c d
-output=chooseAB8 valid 0 o
-
-
-
-getOpcodeParameterCount:
-
-output: out 8
-
-valid: in
-opcode: in 8
-
-a=chooseABCDEFGH8 opcode[0:3] 2 2 3 3 3 3 3 3
-b=chooseABCDEFGH8 opcode[0:3] 3 3 3 0 3 3 3 3
-c=chooseABCDEFGH8 opcode[0:3] 2 1 3 3 3 3 3 3
-d=chooseABCDEFGH8 opcode[0:3] 1 0 0 0 0 0 0 0
-o=chooseABCD8 opcode[3:5] a b c d
-output=chooseAB8 valid 0 o
-
-
-
-getOpcodeNotAluInstruction:
-
-isMov: out
-isJ: out
-isJe: out
-isJne: out
-isJl: out
-isJnl: out
-isJls: out
-isJnls: out
-isOut: out
-
-opcode: in 8
-
-isMov=equal8 opcode 16
-isJ=equal8 opcode 17
-isJe=equal8 opcode 18
-isJne=equal8 opcode 19
-isJl=equal8 opcode 20
-isJnl=equal8 opcode 21
-isJls=equal8 opcode 22
-isJnls=equal8 opcode 23
-isOut=equal8 opcode 24
-
-
-
-bitRotateExtendP<P=1...16>_<S=1...16>:
-<?(2**P>S)>
-
-output: out <2**P>
-
-inputRotation: in <P>
-input: in <S>
-
-a=concat<S>_<2**P-S> input 0
-output=bitRotateLeftN_P<P> a inputRotation
-
-
-
-bitRotateExtractP<P=1...16>_<S=1...16>:
-<?(2**P>S)>
-
-output: out <S>
-
-inputRotation: in <P>
-input: in <2**P>
-
-a=bitRotateRightN_P<P> input inputRotation
-output=set<S> a[0:<S>]
-
-
-
 andorand:
 
 o: out
@@ -1258,70 +884,7 @@ o=nand r1 r2
 
 
 
-swapc1_preComputedData:
-
-oa: out
-ob: out
-
-swap: in
-swap_not: in
-a: in
-b: in
-
-oa=andorand swap_not a swap b
-ob=andorand swap a swap_not b
-
-
-
-swapc<S=2...16>_preComputedData:
-
-oa: out <S>
-ob: out <S>
-
-swap: in
-swap_not: in
-a: in <S>
-b: in <S>
-
-oa1 ob1=swapc<S-1>_preComputedData swap swap_not a[0:<S-1>] b[0:<S-1>]
-oa2 ob2=swapc1_preComputedData swap swap_not a[<S-1>] b[<S-1>]
-oa=concat<S-1>_1 oa1 oa2
-ob=concat<S-1>_1 ob1 ob2
-
-
-
-swapcP0_preComputedData:
-
-oa: out
-ob: out
-
-swap: in
-swap_not: in
-a: in
-b: in
-
-oa ob=swapc1_preComputedData swap swap_not a b
-
-
-
-swapcP<SIZEP=1...24>_preComputedData:
-
-oa: out <2**SIZEP>
-ob: out <2**SIZEP>
-
-swap: in
-swap_not: in
-a: in <2**SIZEP>
-b: in <2**SIZEP>
-
-oa1 ob1=swapcP<SIZEP-1>_preComputedData swap swap_not a[0:<2**SIZEP/2>] b[0:<2**SIZEP/2>]
-oa2 ob2=swapcP<SIZEP-1>_preComputedData swap swap_not a[<2**SIZEP/2>:<2**SIZEP>] b[<2**SIZEP/2>:<2**SIZEP>]
-oa=concat<2**SIZEP/2>_<2**SIZEP/2> oa1 oa2
-ob=concat<2**SIZEP/2>_<2**SIZEP/2> ob1 ob2
-
-
-
-selectorP0:
+selector:
 
 o: out
 
@@ -1336,22 +899,20 @@ o=nand a b
 
 
 
-selectorP<SIZEP=1...24>:
+selectorP<SP=0...24>:
 
-o: out <2**SIZEP>
+o: out <2**SP>
 
-i_select_a: in <2**SIZEP>
-i_select_b: in <2**SIZEP>
-i_a: in <2**SIZEP>
-i_b: in <2**SIZEP>
+i_select_a: in <2**SP>
+i_select_b: in <2**SP>
+i_a: in <2**SP>
+i_b: in <2**SP>
 
-a=selectorP<SIZEP-1> i_select_a[0:<2**SIZEP/2>] i_select_b[0:<2**SIZEP/2>] i_a[0:<2**SIZEP/2>] i_b[0:<2**SIZEP/2>]
-b=selectorP<SIZEP-1> i_select_a[<2**SIZEP/2>:<2**SIZEP>] i_select_b[<2**SIZEP/2>:<2**SIZEP>] i_a[<2**SIZEP/2>:<2**SIZEP>] i_b[<2**SIZEP/2>:<2**SIZEP>]
-o=concat<2**SIZEP/2>_<2**SIZEP/2> a b
+o=selector*<2**SP> i_select_a i_select_b i_a i_b
 
 
 
-deselectorP0:
+deselector:
 
 o_a: out
 o_b: out
@@ -1371,27 +932,63 @@ o_b_not=set b_not
 
 
 
-deselectorP<SIZEP=1...24>:
+deselectorP<SP=0...24>:
 
-o_a: out <2**SIZEP>
-o_b: out <2**SIZEP>
-o_a_not: out <2**SIZEP>
-o_b_not: out <2**SIZEP>
+o_a: out <2**SP>
+o_b: out <2**SP>
+o_a_not: out <2**SP>
+o_b_not: out <2**SP>
 
-i_set_a: in <2**SIZEP>
-i_set_b: in <2**SIZEP>
-i_value: in <2**SIZEP>
+i_set_a: in <2**SP>
+i_set_b: in <2**SP>
+i_value: in <2**SP>
 
-a1 b1 a1_not b1_not=deselectorP<SIZEP-1> i_set_a[0:<2**SIZEP/2>] i_set_b[0:<2**SIZEP/2>] i_value[0:<2**SIZEP/2>]
-a2 b2 a2_not b2_not=deselectorP<SIZEP-1> i_set_a[<2**SIZEP/2>:<2**SIZEP>] i_set_b[<2**SIZEP/2>:<2**SIZEP>] i_value[<2**SIZEP/2>:<2**SIZEP>]
-o_a=concat<2**SIZEP/2>_<2**SIZEP/2> a1 a2
-o_b=concat<2**SIZEP/2>_<2**SIZEP/2> b1 b2
-o_a_not=concat<2**SIZEP/2>_<2**SIZEP/2> a1_not a2_not
-o_b_not=concat<2**SIZEP/2>_<2**SIZEP/2> b1_not b2_not
+o_a o_b o_a_not o_b_not=deselector*<2**SP> i_set_a i_set_b i_value
 
 
 
-ornor_negInputsP0:
+demultiplexer1_preComputedData:
+
+o: out 2
+o_not: out 2
+
+i_index_not: in
+i_index: in
+i_value: in
+
+oa ob oa_not ob_not=deselector i_index_not i_index i_value
+o=set2 oa+ob
+o_not=set2 oa_not+ob_not
+
+
+
+demultiplexer<SP=2...24>_preComputedData:
+
+o: out <2**SP>
+o_not: out <2**SP>
+
+i_index_not: in <SP>
+i_index: in <SP>
+i_value: in
+
+a a_not=demultiplexer<SP-1>_preComputedData i_index_not[1:<SP>] i_index[1:<SP>] i_value
+o o_not=demultiplexer1_preComputedData*<2**SP/2> i_index_not[0]*<2**SP/2> i_index[0]*<2**SP/2> a
+
+
+
+demultiplexer<SP=1...24>:
+
+o: out <2**SP*2>
+
+i_index: in <SP>
+i_value: in
+
+i_index_not=not*<SP> i_index
+o o_not=demultiplexer<SP>_preComputedData i_index_not i_index i_value
+
+
+
+ornor_negInputs:
 
 o_or: out
 o_nor: out
@@ -1405,29 +1002,26 @@ o_nor=not a
 
 
 
-ornor_negInputsP<SIZEP=1...24>:
+ornor_negInputsP<SP=0...24>:
 
-o_or: out <2**SIZEP>
-o_nor: out <2**SIZEP>
+o_or: out <2**SP>
+o_nor: out <2**SP>
 
-i_a_not: in <2**SIZEP>
-i_b_not: in <2**SIZEP>
+i_a_not: in <2**SP>
+i_b_not: in <2**SP>
 
-a a_not=ornor_negInputsP<SIZEP-1> i_a_not[0:<2**SIZEP/2>] i_b_not[0:<2**SIZEP/2>]
-b b_not=ornor_negInputsP<SIZEP-1> i_a_not[<2**SIZEP/2>:<2**SIZEP>] i_b_not[<2**SIZEP/2>:<2**SIZEP>]
-o_or=set<2**SIZEP> a+b
-o_nor=set<2**SIZEP> a_not+b_not
+o_or o_nor=ornor_negInputs*<2**SP> i_a_not i_b_not
 
 
 
-bitTransposeP<SIZEP=0...24>_wordP<IWORDP=0...24>:
-<?(IWORDP<=SIZEP)>
+bitTransposeP<SP=0...24>_wordP<IWORDP=0...24>:
+<?(IWORDP<=SP)>
 
-o: out <2**SIZEP>
+o: out <2**SP>
 
-i: in <2**SIZEP>
+i: in <2**SP>
 
-o=set<2**SIZEP> i%<2**IWORDP>
+o=set<2**SP> i%<2**IWORDP>
 
 
 
@@ -1437,7 +1031,7 @@ o: out <2**BP>
 
 i: in
 
-o=fanOutP<BP> i
+o=set<2**BP> i*<2**BP>
 
 
 
@@ -1450,48 +1044,7 @@ i: in <2**IP>
 
 a=fanOutBitwiseP<BP>_P<IP-1> i[0:<2**IP/2>]
 b=fanOutBitwiseP<BP>_P<IP-1> i[<2**IP/2>:<2**IP>]
-o=concat<2**(IP+BP)/2>_<2**(IP+BP)/2> a b
-
-
-
-selectorChainP1_P0_internal:
-
-o: out
-
-i_index_not: in
-i_index: in
-i_array: in 2
-
-o=selectorP0 i_index_not i_index i_array[0] i_array[1]
-
-
-
-selectorChainP<SIZEP=2...24>_P0_internal:
-
-o: out
-
-i_index_not: in <SIZEP>
-i_index: in <SIZEP>
-i_array: in <2**SIZEP>
-
-a=selectorChainP<SIZEP-1>_P0_internal i_index_not[0:<SIZEP-1>] i_index[0:<SIZEP-1>] i_array[0:<2**SIZEP/2>]
-b=selectorChainP<SIZEP-1>_P0_internal i_index_not[0:<SIZEP-1>] i_index[0:<SIZEP-1>] i_array[<2**SIZEP/2>:<2**SIZEP>]
-o=selectorP0 i_index_not[<SIZEP-1>] i_index[<SIZEP-1>] a b
-
-
-
-selectorChainP<SIZEP=1...24>_P<RP=1...22>_internal:
-<?(RP<SIZEP)>
-
-o: out <2**RP>
-
-i_index_not: in <SIZEP-RP>
-i_index: in <SIZEP-RP>
-i_array: in <2**SIZEP>
-
-a=selectorChainP<SIZEP-1>_P<RP-1>_internal i_index_not i_index i_array[0:<2**SIZEP/2>]
-b=selectorChainP<SIZEP-1>_P<RP-1>_internal i_index_not i_index i_array[<2**SIZEP/2>:<2**SIZEP>]
-o=concat<2**RP/2>_<2**RP/2> a b
+o=set<2**(IP+BP)> a+b
 
 
 
@@ -1504,57 +1057,8 @@ i_index_not: in <SIZEP-RP>
 i_index: in <SIZEP-RP>
 i_array: in <2**SIZEP>
 
-array_transposed=bitTransposeP<SIZEP>_wordP<RP> i_array
-o=selectorChainP<SIZEP>_P<RP>_internal i_index_not i_index array_transposed
-
-
-
-deselectorChainP1_P0_internal:
-
-o: out 2
-o_not: out 2
-
-i_index_not: in
-i_index: in
-i_value: in
-
-a b a_not b_not=deselectorP0 i_index_not i_index i_value
-o=concat1_1 a b
-o_not=concat1_1 a_not b_not
-
-
-
-deselectorChainP<SIZEP=2...24>_P0_internal:
-
-o: out <2**SIZEP>
-o_not: out <2**SIZEP>
-
-i_index_not: in <SIZEP>
-i_index: in <SIZEP>
-i_value: in
-
-va vb va_not vb_not=deselectorP0 i_index_not[<SIZEP-1>] i_index[<SIZEP-1>] i_value
-a a_not=deselectorChainP<SIZEP-1>_P0_internal i_index_not[0:<SIZEP-1>] i_index[0:<SIZEP-1>] va
-b b_not=deselectorChainP<SIZEP-1>_P0_internal i_index_not[0:<SIZEP-1>] i_index[0:<SIZEP-1>] vb
-o=concat<2**SIZEP/2>_<2**SIZEP/2> a b
-o_not=concat<2**SIZEP/2>_<2**SIZEP/2> a_not b_not
-
-
-
-deselectorChainP<SIZEP=1...24>_P<WP=1...22>_internal:
-<?(WP<SIZEP)>
-
-o: out <2**SIZEP>
-o_not: out <2**SIZEP>
-
-i_index_not: in <SIZEP-WP>
-i_index: in <SIZEP-WP>
-i_value: in <2**WP>
-
-a a_not=deselectorChainP<SIZEP-1>_P<WP-1>_internal i_index_not i_index i_value[0:<2**WP/2>]
-b b_not=deselectorChainP<SIZEP-1>_P<WP-1>_internal i_index_not i_index i_value[<2**WP/2>:<2**WP>]
-o=concat<2**SIZEP/2>_<2**SIZEP/2> a b
-o_not=concat<2**SIZEP/2>_<2**SIZEP/2> a_not b_not
+array_transposed=set<2**SIZEP> i_array%<2**RP>
+o=multiplexer<SIZEP-RP>_preComputedData*<2**RP> i_index_not*<2**RP> i_index*<2**RP> array_transposed
 
 
 
@@ -1568,9 +1072,9 @@ i_index_not: in <SIZEP-WP>
 i_index: in <SIZEP-WP>
 i_value: in <2**WP>
 
-_o _o_not=deselectorChainP<SIZEP>_P<WP>_internal i_index_not i_index i_value
-o=bitTransposeP<SIZEP>_wordP<SIZEP-WP> _o
-o_not=bitTransposeP<SIZEP>_wordP<SIZEP-WP> _o_not
+_o _o_not=demultiplexer<SIZEP-WP>_preComputedData*<2**WP> i_index_not*<2**WP> i_index*<2**WP> i_value
+o=set<2**SIZEP> _o%<2**(SIZEP-WP)>
+o_not=set<2**SIZEP> _o_not%<2**(SIZEP-WP)>
 
 
 
@@ -1606,7 +1110,7 @@ o_write_value o_write_value_not=deselectorChainP<SIZEP>_P<WP> write_index_not i_
 
 
 
-addressableMemoryP<SIZEP=1...24>_P<RP=0...22>_P<WP=0...22>:
+addressableMemoryP<SIZEP=1...24>_P<RP=0...10>_P<WP=0...10>:
 <?(RP<SIZEP)>
 <?(WP<SIZEP)>
 
@@ -1627,7 +1131,7 @@ memory=selectorP<SIZEP> write_mask_not write_mask memory write_value
 
 
 
-twiceAddressableMemoryP<SIZEP=1...24>_P<RP=0...22>_P<WP=0...22>:
+twiceAddressableMemoryP<SIZEP=1...24>_P<RP=0...10>_P<WP=0...10>:
 <?(RP<SIZEP)>
 <?(WP<SIZEP)>
 
@@ -1661,7 +1165,7 @@ memory=selectorP<SIZEP> write_mask_not write_mask memory write_value
 
 
 
-wordPairAddressableMemoryP<SIZEP=1...24>_P<RP=0...22>_P<WP=0...22>:
+wordPairAddressableMemoryP<SIZEP=1...24>_P<RP=0...10>_P<WP=0...10>:
 <?(RP<SIZEP)>
 <?(WP<SIZEP)>
 
@@ -1680,104 +1184,11 @@ write_b_mask=set<2**WP> i_write_mask[<2**WP>:<2**WP*2>]
 write_a=set<2**WP> i_write_value[0:<2**WP>]
 write_b=set<2**WP> i_write_value[<2**WP>:<2**WP*2>]
 oa ob=twiceAddressableMemoryP<SIZEP>_P<RP>_P<WP> i_read_address read_address_b write_a_mask write_b_mask i_write_address write_address_b write_a write_b
-o_read_value=concat<2**RP>_<2**RP> oa ob
+o_read_value=set<2**RP*2> oa+ob
 
 
 
-wordShiftLeftP<SHIFTP=0...23>_P<SIZEP=1...24>:
-<?(SHIFTP<SIZEP)>
-
-o: out <2**SIZEP>
-
-i: in <2**SIZEP>
-
-o=concat<2**SHIFTP>_<2**SIZEP-2**SHIFTP> 0 i[0:<2**SIZEP-2**SHIFTP>]
-
-
-
-wordShiftRightP<SHIFTP=0...23>_P<SIZEP=1...24>:
-<?(SHIFTP<SIZEP)>
-
-o: out <2**SIZEP>
-
-i: in <2**SIZEP>
-
-o=concat<2**SIZEP-2**SHIFTP>_<2**SHIFTP> i[<2**SHIFTP>:<2**SIZEP>] 0
-
-
-
-wordShift<DIR=Left,Right>N_P<SIZEP=1...24>_wordP0_internal_step0:
-
-o: out <2**SIZEP>
-
-i_value: in <2**SIZEP>
-i_shift: in <SIZEP>
-i_shift_not: in <SIZEP>
-
-o=set<2**SIZEP> i_value
-
-
-
-wordShift<DIR=Left,Right>N_P<SIZEP=1...24>_wordP0_internal_step<STEP=1...24>:
-<?(STEP<=SIZEP)>
-
-o: out <2**SIZEP>
-
-i_value: in <2**SIZEP>
-i_shift: in <SIZEP>
-i_shift_not: in <SIZEP>
-
-a=wordShift<DIR>N_P<SIZEP>_wordP0_internal_step<STEP-1> i_value i_shift i_shift_not
-b=wordShift<DIR>P<STEP-1>_P<SIZEP> a
-shift_fannedOut=fanOutP<SIZEP> i_shift[<STEP-1>]
-shift_fannedOut_not=fanOutP<SIZEP> i_shift_not[<STEP-1>]
-o=selectorP<SIZEP> shift_fannedOut_not shift_fannedOut a b
-
-
-
-wordShift<DIR=Left,Right>N_P<SIZEP=1...24>_wordP0_internal:
-
-o: out <2**SIZEP>
-
-i_value: in <2**SIZEP>
-i_shift: in <SIZEP>
-i_shift_not: in <SIZEP>
-
-o=wordShift<DIR>N_P<SIZEP>_wordP0_internal_step<SIZEP> i_value i_shift i_shift_not
-
-
-
-wordShift<DIR=Left,Right>N_P<SIZEP=1...24>_wordP<WORDP=1...6>_internal:
-<?(SIZEP+WORDP<=24)>
-
-o: out <2**(SIZEP+WORDP)>
-
-i_value: in <2**(SIZEP+WORDP)>
-i_shift: in <SIZEP>
-i_shift_not: in <SIZEP>
-
-a=wordShift<DIR>N_P<SIZEP>_wordP<WORDP-1>_internal i_value[0:<2**(SIZEP+WORDP-1)>] i_shift i_shift_not
-b=wordShift<DIR>N_P<SIZEP>_wordP<WORDP-1>_internal i_value[<2**(SIZEP+WORDP-1)>:<2**(SIZEP+WORDP)>] i_shift i_shift_not
-o=concat<2**(SIZEP+WORDP-1)>_<2**(SIZEP+WORDP-1)> a b
-
-
-
-wordShift<DIR=Left,Right>N_P<SIZEP=1...24>_wordP<WORDP=0...6>:
-<?(SIZEP+WORDP<=24)>
-
-o: out <2**(SIZEP+WORDP)>
-
-i_value: in <2**(SIZEP+WORDP)>
-i_shift: in <SIZEP>
-
-shift_not=not<SIZEP> i_shift
-value=bitTransposeP<SIZEP+WORDP>_wordP<WORDP> i_value
-_o=wordShift<DIR>N_P<SIZEP>_wordP<WORDP>_internal value i_shift shift_not
-o=bitTransposeP<SIZEP+WORDP>_wordP<SIZEP> _o
-
-
-
-multipleConsecutiveWordAddressableMemoryP<SIZEP=1...24>_P<WORDP=0...6>_readP<RCP=1...6>_writeP<WCP=1...6>:
+multipleConsecutiveWordAddressableMemoryP<SIZEP=1...24>_P<WORDP=0...4>_readP<RCP=1...5>_writeP<WCP=1...5>:
 <?(WORDP+RCP<SIZEP)>
 <?(WORDP+WCP<SIZEP)>
 
@@ -1800,12 +1211,12 @@ read_value_pre_shift=wordPairAddressableMemoryP<SIZEP>_P<WORDP+RCP>_P<WORDP+WCP>
 
 read_address_for_shift=concat<RCP>_1 i_read_address[0:<RCP>] 0
 
-read_value=wordShiftRightN_P<RCP+1>_wordP<WORDP> read_value_pre_shift read_address_for_shift
+read_value=wordShiftRightUnsignedN_P<RCP+1>_wordP<WORDP> read_value_pre_shift read_address_for_shift
 o_read_value=set<2**(WORDP+RCP)> read_value[0:<2**(WORDP+RCP)>]
 
 
 
-addressableMemoryConsecutiveWords<ADDRESS=1...16>_<WORD=1,2,4,8,16>_<SEQ=2,4,8,16>:
+addressableMemoryConsecutiveWords<ADDRESS=1...16>_<WORD=1,2,4,8,16>_<SEQ=2,4,8,16,32>:
 <?(2**ADDRESS>SEQ*2)>
 
 output: out <WORD*SEQ>
@@ -1837,61 +1248,224 @@ o: out <2**S>
 i: in <S>
 
 a=bitsSetUntil<S-1> i[0:<S-1>]
-allOnes=fanOutP<S-1> 1
-oa=ternaryOperatorP<S-1> i[<S-1>] a allOnes
+oa=ternaryOperatorP<S-1> i[<S-1>] a -1
 ob=ternaryOperatorP<S-1> i[<S-1>] 0 a
-o=concat<2**S/2>_<2**S/2> oa ob
+o=set<2**S> oa+ob
 
 
 
-addConditionalValue<S=1...16>:
-
-o: out <S>
-
-a: in <S>
-condition: in
-b1: in <S>
-b2: in <S>
-
-b=chooseAB<S> condition b1 b2
-o _=add<S> a b 0
-
-
-
-concatABC<S=1...32>:
-
-o: out <S*3>
-
-a: in <S>
-b: in <S>
-c: in <S>
-
-r=concat<S>_<S> a b
-o=concat<S*2>_<S> r c
-
-
-
-arrayReadElementByIndexP1_<WORD=1,2,4,8,16>:
+arrayReadElementByIndexP<LENGTHP=1...16>_word<WORD=1,2,4,8,16>:
 
 o: out <WORD>
 
-i_array: in <WORD*2>
-i_index: in
+i_array: in <2**LENGTHP*WORD>
+i_index: in <LENGTHP>
 
-o=chooseAB<WORD> i_index i_array[0:<WORD>] i_array[<WORD>:<WORD*2>]
+arrays=set<2**LENGTHP*WORD> i_array%<WORD>
+i_index_not=not*<LENGTHP> i_index
+o=multiplexer<LENGTHP>_preComputedData*<WORD> i_index_not*<WORD> i_index*<WORD> arrays
 
 
 
-arrayReadElementByIndexP<SIZEP=2...16>_<WORD=1,2,4,8,16>:
+computerStageShiftRegisterUpdate:
 
-o: out <WORD>
+nextShiftRegisterValue: out 8
 
-i_array: in <2**SIZEP*WORD>
-i_index: in <SIZEP>
+shiftRegisterValue: in 8
+restart: in
+moveForward: in
 
-oa=arrayReadElementByIndexP<SIZEP-1>_<WORD> i_array[0:<2**SIZEP*WORD/2>] i_index[0:<SIZEP-1>]
-ob=arrayReadElementByIndexP<SIZEP-1>_<WORD> i_array[<2**SIZEP*WORD/2>:<2**SIZEP*WORD>] i_index[0:<SIZEP-1>]
-o=chooseAB<WORD> i_index[<SIZEP-1>] oa ob
+shifted _=bitShiftLeft1_8 shiftRegisterValue
+a=chooseAB8 moveForward shiftRegisterValue shifted
+nextShiftRegisterValue=chooseAB8 restart a 1
+
+
+
+alu:
+
+output: out 16
+
+inputA: in 16
+inputB: in 16
+operationIndex: in 4
+
+rNot=not*16 inputA
+rNeg=neg16 inputA
+rAnd=and*16 inputA inputB
+rOr=or*16 inputA inputB
+rXor=xor*16 inputA inputB
+rShl _=bitShiftLeftN_P4 inputA inputB[0:4]
+rShr _=bitShiftRightUnsignedN_P4 inputA inputB[0:4]
+rShrs _=bitShiftRightSignedN_P4 inputA inputB[0:4]
+
+rAdd _=add16 inputA inputB 0
+rSub _=sub16 inputA inputB 0
+rMul _=mul16_16 inputA inputB
+rDiv rMod=divUnsigned16 inputA inputB
+rDivs rMods=divSigned16 inputA inputB
+
+a=chooseABCDEFGH16 operationIndex[0:3] rNot rNeg rAnd rOr rXor rShl rShr rShrs
+b=chooseABCDEFGH16 operationIndex[0:3] rAdd rSub rMul 0 rDiv rDivs rMod rMods
+output=chooseAB16 operationIndex[3] a b
+
+
+
+getOpcodeValid:
+
+valid: out
+
+opcode: in 8
+
+a=chooseABCDEFGH1 opcode[0:3] 1 1 1 1 1 1 1 1
+b=chooseABCDEFGH1 opcode[0:3] 1 1 1 0 1 1 1 1
+c=chooseABCDEFGH1 opcode[0:3] 1 1 1 1 1 1 1 1
+d=chooseABCDEFGH1 opcode[0:3] 1 0 0 0 0 0 0 0
+o=chooseABCD1 opcode[3:5] a b c d
+insideRange=equal3 opcode[5:8] 0
+valid=and insideRange o
+
+
+
+getOpcodeFirstArgumentIsOutput:
+
+output: out
+
+valid: in
+opcode: in 8
+
+a=chooseABCDEFGH8 opcode[0:3] 1 1 1 1 1 1 1 1
+b=chooseABCDEFGH8 opcode[0:3] 1 1 1 0 1 1 1 1
+c=chooseABCDEFGH8 opcode[0:3] 1 0 0 0 0 0 0 0
+d=chooseABCDEFGH8 opcode[0:3] 0 0 0 0 0 0 0 0
+o=chooseABCD8 opcode[3:5] a b c d
+output=chooseAB8 valid 0 o
+
+
+
+getOpcodeParameterCount:
+
+output: out 8
+
+valid: in
+opcode: in 8
+
+a=chooseABCDEFGH8 opcode[0:3] 2 2 3 3 3 3 3 3
+b=chooseABCDEFGH8 opcode[0:3] 3 3 3 0 3 3 3 3
+c=chooseABCDEFGH8 opcode[0:3] 2 1 3 3 3 3 3 3
+d=chooseABCDEFGH8 opcode[0:3] 1 0 0 0 0 0 0 0
+o=chooseABCD8 opcode[3:5] a b c d
+output=chooseAB8 valid 0 o
+
+
+
+getOpcodeUseAlu:
+
+useAlu: out
+
+valid: in
+opcode: in 8
+
+insideRange=equal4 opcode[4:8] 0
+useAlu=and valid insideRange
+
+
+
+getOpcodeAluOperationIndex:
+
+operationIndex: out 4
+
+valid: in
+opcode: in 8
+
+operationIndex=chooseAB4 valid 0 opcode[0:4]
+
+
+
+getOpcodeNotAluInstruction:
+
+isMov: out
+isJ: out
+isJe: out
+isJne: out
+isJl: out
+isJnl: out
+isJls: out
+isJnls: out
+isOut: out
+
+opcode: in 8
+
+isMov=equal8 opcode 16
+isJ=equal8 opcode 17
+isJe=equal8 opcode 18
+isJne=equal8 opcode 19
+isJl=equal8 opcode 20
+isJnl=equal8 opcode 21
+isJls=equal8 opcode 22
+isJnls=equal8 opcode 23
+isOut=equal8 opcode 24
+
+
+
+getOpcodeNotAluJumpInstruction:
+
+isJ: out
+isJe: out
+isJne: out
+isJl: out
+isJnl: out
+isJls: out
+isJnls: out
+
+opcode: in 8
+
+isMov isJ isJe isJne isJl isJnl isJls isJnls isOut=getOpcodeNotAluInstruction opcode
+
+
+
+getOpcodeNotAluNotJumpInstruction:
+
+isMov: out
+isOut: out
+
+opcode: in 8
+
+isMov isJ isJe isJne isJl isJnl isJls isJnls isOut=getOpcodeNotAluInstruction opcode
+
+
+
+getInstructionJump:
+
+executeJump: out
+executeJump_address: out 16
+
+enable: in
+opcode: in 8
+argumentA: in 16
+argumentB: in 16
+argumentC: in 16
+
+isJ isJe isJne isJl isJnl isJls isJnls=getOpcodeNotAluJumpInstruction opcode
+
+isJumpTypeInstruction=orABCDEFG isJ isJe isJne isJl isJnl isJls isJnls
+
+_pre_acceptJe=equal16 argumentB argumentC
+_pre_acceptJne=not _pre_acceptJe
+_pre_acceptJl=lessThanUnsigned16 argumentB argumentC
+_pre_acceptJnl=not _pre_acceptJl
+_pre_acceptJls=lessThanSigned16 argumentB argumentC
+_pre_acceptJnls=not _pre_acceptJls
+
+acceptJe=and isJe _pre_acceptJe
+acceptJne=and isJne _pre_acceptJne
+acceptJl=and isJl _pre_acceptJl
+acceptJnl=and isJnl _pre_acceptJnl
+acceptJls=and isJls _pre_acceptJls
+acceptJnls=and isJnls _pre_acceptJnls
+
+acceptJump=orABCDEFG isJ acceptJe acceptJne acceptJl acceptJnl acceptJls acceptJnls
+executeJump=andABC enable isJumpTypeInstruction acceptJump
+executeJump_address=set16 argumentA
 
 
 
@@ -1982,8 +1556,8 @@ noInvalidOutputParameters=not invalidOutputParameters
 
 instructionValid=andABC opcodeValid atMostOneMemoryInput noInvalidOutputParameters
 
-parameters_R=concatABC1 parameterA_R parameterB_R parameterC_R
-parameters_M=concatABC1 parameterA_M parameterB_M parameterC_M
+parameters_R=set3 parameterA_R+parameterB_R+parameterC_R
+parameters_M=set3 parameterA_M+parameterB_M+parameterC_M
 
 o_instructionLength=set16 instructionLength
 o_instructionValid=set instructionValid
@@ -2042,7 +1616,7 @@ readRegisterAddress=set5 argument_pre_register[0:5]
 argument_pre_memory=chooseAB16 readRegister argument_pre_register register
 
 
-register=arrayReadElementByIndexP5_16 i_registers readRegisterAddress
+register=arrayReadElementByIndexP5_word16 i_registers readRegisterAddress
 
 
 readMemory=andABC i_canLoad i_M isInput
@@ -2075,15 +1649,13 @@ i_store_address: in 16
 
 storeInRegister=andnot i_store_enable i_store_in_memory
 register_out=chooseAB16 storeInRegister 0 i_value
-_onesFannedOut16=fanOut16 1
-register_out_mask=chooseAB16 storeInRegister 0 _onesFannedOut16
+register_out_mask=chooseAB16 storeInRegister 0 -1
 
-bitRotation=concat4_5 0 i_store_address[0:5]
 register_out_extended=concat16_496 register_out 0
 register_out_mask_extended=concat16_496 register_out_mask 0
 
-registers_write_value=bitRotateLeftN_P9 register_out_extended bitRotation
-registers_write_mask=bitRotateLeftN_P9 register_out_mask_extended bitRotation
+registers_write_value=wordShiftLeftN_P5_wordP4 register_out_extended i_store_address[0:5]
+registers_write_mask=wordShiftLeftN_P5_wordP4 register_out_mask_extended i_store_address[0:5]
 
 
 memory_write=and i_store_enable i_store_in_memory
@@ -2095,68 +1667,6 @@ o_registers_write_mask=set512 registers_write_mask
 o_memory_write=set memory_write
 o_memory_write_value=set16 memory_write_value
 o_memory_write_address=set16 memory_write_address
-
-
-
-getOpcodeNotAluJumpInstruction:
-
-isJ: out
-isJe: out
-isJne: out
-isJl: out
-isJnl: out
-isJls: out
-isJnls: out
-
-opcode: in 8
-
-isMov isJ isJe isJne isJl isJnl isJls isJnls isOut=getOpcodeNotAluInstruction opcode
-
-
-
-getOpcodeNotAluNotJumpInstruction:
-
-isMov: out
-isOut: out
-
-opcode: in 8
-
-isMov isJ isJe isJne isJl isJnl isJls isJnls isOut=getOpcodeNotAluInstruction opcode
-
-
-
-getInstructionJump:
-
-executeJump: out
-executeJump_address: out 16
-
-enable: in
-opcode: in 8
-argumentA: in 16
-argumentB: in 16
-argumentC: in 16
-
-isJ isJe isJne isJl isJnl isJls isJnls=getOpcodeNotAluJumpInstruction opcode
-
-isJumpTypeInstruction=orABCDEFG isJ isJe isJne isJl isJnl isJls isJnls
-
-_pre_acceptJe=equal16 argumentB argumentC
-_pre_acceptJne=not _pre_acceptJe
-_pre_acceptJl=lessThanUnsigned16 argumentB argumentC
-_pre_acceptJnl=not _pre_acceptJl
-_pre_acceptJls=lessThanSigned16 argumentB argumentC
-_pre_acceptJnls=not _pre_acceptJls
-
-acceptJe=and isJe _pre_acceptJe
-acceptJne=and isJne _pre_acceptJne
-acceptJl=and isJl _pre_acceptJl
-acceptJnl=and isJnl _pre_acceptJnl
-acceptJls=and isJls _pre_acceptJls
-acceptJnls=and isJnls _pre_acceptJnls
-
-acceptJump=orABCDEFG isJ acceptJe acceptJne acceptJl acceptJnl acceptJls acceptJnls
-executeJump=andABC enable isJumpTypeInstruction acceptJump
-executeJump_address=set16 argumentA
 
 
 

@@ -441,24 +441,6 @@ class ComputerBuilder
 					
 					return SafeInteger(r);
 				}
-				SafeInteger operator &&(const SafeInteger& integerB) const
-				{
-					int a=internal_value;
-					int b=integerB.internal_value;
-					
-					int r= a && b;
-					
-					return SafeInteger(r);
-				}
-				SafeInteger operator ||(const SafeInteger& integerB) const
-				{
-					int a=internal_value;
-					int b=integerB.internal_value;
-					
-					int r= a || b;
-					
-					return SafeInteger(r);
-				}
 				
 				SafeInteger& operator *=(const SafeInteger& b)
 				{
@@ -887,6 +869,7 @@ class ComputerBuilder
 			
 			void addTemplateProcessedLine(const string& line,int lineIndex)
 			{
+				if(lines.size()+1>((uint32_t(1)<<31)-1)) throw errorString("Reached limit of number of lines while processing templates",lineIndex);
 				lines.emplace_back(line);
 				lineIndexToOriginalLineIndex.push_back(lineIndex);
 			}
@@ -976,72 +959,91 @@ class ComputerBuilder
 			template <class ValueT,class ContextT>
 			class ExpressionEvaluator
 			{
-				private:
-					class Code
-					{
-						public:
-						
-						vector<string> tokens;
-						
-						Code(){}
-						explicit Code(const string& codeString)
-						{
-							tokens=tokenize(codeString);
-						}
-						
-						static vector<string> tokenize(const string& codeString)
-						{
-							vector<string> outputTokens;
-							string wordToken;
-							for(size_t p=0;p<codeString.size();p++)
-							{
-								uint8_t c=codeString[p];
-								
-								if(isCharacterOfWordToken(c))
-								{
-									wordToken.push_back(c);
-								}
-								else
-								{
-									if(wordToken.size()>0)
-									{
-										outputTokens.push_back(wordToken);
-										wordToken=string();
-									}
-									outputTokens.emplace_back(1,c);
-								}
-							}
-							if(wordToken.size()>0)
-							{
-								outputTokens.push_back(wordToken);
-								wordToken=string();
-							}
-							return outputTokens;
-						}
-						static string untokenize(const vector<string>& inputTokens)
-						{
-							string str;
-							for(size_t t=0;t<inputTokens.size();t++)
-							{
-								str+=inputTokens[t];
-							}
-							return str;
-						}
-						
-						private:
-							static bool isCharacterOfWordToken(uint8_t c)
-							{
-								return c>='a' && c<='z' || c>='A' && c<='Z' || c>='0' && c<='9' || c=='_';
-							}
-						public:
-					};
 				public:
+				
+				class Code
+				{
+					public:
+					
+					vector<string> tokens;
+					
+					Code(){}
+					explicit Code(const string& codeString)
+					{
+						tokens=tokenize(codeString);
+					}
+					
+					static vector<string> tokenize(const string& codeString)
+					{
+						vector<string> outputTokens;
+						string wordToken;
+						for(size_t p=0;p<codeString.size();p++)
+						{
+							uint8_t c=codeString[p];
+							
+							if(isCharacterOfWordToken(c))
+							{
+								wordToken.push_back(c);
+							}
+							else
+							{
+								if(wordToken.size()>0)
+								{
+									outputTokens.push_back(wordToken);
+									wordToken=string();
+								}
+								outputTokens.emplace_back(1,c);
+							}
+						}
+						if(wordToken.size()>0)
+						{
+							outputTokens.push_back(wordToken);
+							wordToken=string();
+						}
+						return outputTokens;
+					}
+					static string untokenize(const vector<string>& inputTokens)
+					{
+						string str;
+						for(size_t t=0;t<inputTokens.size();t++)
+						{
+							str+=inputTokens[t];
+						}
+						return str;
+					}
+					
+					private:
+						static bool isCharacterOfWordToken(uint8_t c)
+						{
+							return c>='a' && c<='z' || c>='A' && c<='Z' || c>='0' && c<='9' || c=='_';
+						}
+					public:
+				};
+				
+				class EvaluatorContext
+				{
+					public:
+					
+					const Code*codePtr=nullptr;
+					size_t tokenIndex=0;
+					int subexpressionLevel=0;
+					
+					EvaluatorContext(){}
+					EvaluatorContext(const Code& _code,size_t _tokenIndex,int _subexpressionLevel)
+					{
+						codePtr=&_code;
+						tokenIndex=_tokenIndex;
+						subexpressionLevel=_subexpressionLevel;
+					}
+				};
 				
 				class Function
 				{
 					private:
-						using FunctionType=std::function<ValueT(const vector<ValueT>&,ContextT&)>;
+						using FunctionType=std::function<ValueT(const vector<ValueT>&,ContextT&,const EvaluatorContext&)>;
+						using FunctionTypeNoEvaluatorContext=std::function<ValueT(const vector<ValueT>&,ContextT&)>;
 						using FunctionTypeNoContext=std::function<ValueT(const vector<ValueT>&)>;
+						using CheckFunctionType=std::function<vector<ValueT>(const vector<ValueT>&,ContextT&,const EvaluatorContext&)>;
 						
 						bool defined=false;
 						
@@ -1050,6 +1052,8 @@ class ComputerBuilder
 						vector<vector<string>> nameTokens;
 						
 						FunctionType function;
+						
+						CheckFunctionType checkFunction;
 						
 						int numberOfArguments=-1;
 						
@@ -1136,16 +1140,37 @@ class ComputerBuilder
 							defined=true;
 						}
 						
-						void initialize(const vector<string>& _name,const FunctionType& _function,
-							int _numberOfArguments,bool _allowSkippedArguments)
+						template <class NameType,class FT>
+						void initialize(const NameType& _name,const FT& _function,const CheckFunctionType& _checkFunction,
+							int _numberOfArguments=-1,bool _allowSkippedArguments=false)
 						{
-							for(size_t i=0;i<_name.size();i++)
+							vector<string> nameVector;
+							if constexpr(std::is_same_v<NameType,vector<string>>) nameVector=_name;
+							else nameVector=vector<string>{string(_name)};
+							
+							for(size_t i=0;i<nameVector.size();i++)
 							{
-								nameTokens.push_back(Code::tokenize(_name[i]));
+								nameTokens.push_back(Code::tokenize(nameVector[i]));
 							}
 							name= nameTokens.size()>0 ? Code::untokenize(nameTokens[0]) : string();
 							
-							function=_function;
+							if constexpr(std::is_same_v<FT,FunctionType>) function=_function;
+							else if constexpr(std::is_same_v<FT,FunctionTypeNoEvaluatorContext>)
+							{
+								function=[_function](const vector<ValueT>& args,ContextT& context,const EvaluatorContext& evaluatorContext)->ValueT
+									{
+										return _function(args,context);
+									};
+							}
+							else if constexpr(std::is_same_v<FT,FunctionTypeNoContext>)
+							{
+								function=[_function](const vector<ValueT>& args,ContextT& context,const EvaluatorContext& evaluatorContext)->ValueT
+									{
+										return _function(args);
+									};
+							}
+							
+							checkFunction=_checkFunction;
 							
 							numberOfArguments=_numberOfArguments;
 							
@@ -1153,45 +1178,59 @@ class ComputerBuilder
 							
 							validate();
 						}
-						
-						void initialize(const vector<string>& _name,const FunctionTypeNoContext& _function,
-							int _numberOfArguments,bool _allowSkippedArguments)
-						{
-							initialize(vector<string>{_name},
-								[_function](const vector<ValueT>& args,ContextT& context)->ValueT
-								{
-									return _function(args);
-								},
-								_numberOfArguments,_allowSkippedArguments);
-						}
 					public:
 					
 					Function(){}
-					Function(const string& _name,const FunctionType& _function,int _numberOfArguments=-1,bool _allowSkippedArguments=false)
+					
+					template <class NameType>
+					Function(const NameType& _name,const FunctionType& _function,int _numberOfArguments=-1,bool _allowSkippedArguments=false)
 					{
-						initialize(vector<string>{_name},_function,_numberOfArguments,_allowSkippedArguments);
+						initialize(_name,_function,nullptr,_numberOfArguments,_allowSkippedArguments);
 					}
-					Function(const vector<string>& _name,const FunctionType& _function,int _numberOfArguments=-1,bool _allowSkippedArguments=false)
+					template <class NameType>
+					Function(const NameType& _name,const FunctionTypeNoEvaluatorContext& _function,int _numberOfArguments=-1,bool _allowSkippedArguments=false)
 					{
-						initialize(_name,_function,_numberOfArguments,_allowSkippedArguments);
+						initialize(_name,_function,nullptr,_numberOfArguments,_allowSkippedArguments);
 					}
-					Function(const string& _name,const FunctionTypeNoContext& _function,int _numberOfArguments=-1,bool _allowSkippedArguments=false)
+					template <class NameType>
+					Function(const NameType& _name,const FunctionTypeNoContext& _function,int _numberOfArguments=-1,bool _allowSkippedArguments=false)
 					{
-						initialize(vector<string>{_name},_function,_numberOfArguments,_allowSkippedArguments);
-					}
-					Function(const vector<string>& _name,const FunctionTypeNoContext& _function,int _numberOfArguments=-1,bool _allowSkippedArguments=false)
-					{
-						initialize(_name,_function,_numberOfArguments,_allowSkippedArguments);
+						initialize(_name,_function,nullptr,_numberOfArguments,_allowSkippedArguments);
 					}
 					
-					ValueT execute(const vector<ValueT>& args,ContextT& context) const
+					template <class NameType>
+					Function(const NameType& _name,const FunctionType& _function,const CheckFunctionType& _checkFunction,
+						int _numberOfArguments=-1,bool _allowSkippedArguments=false)
+					{
+						initialize(_name,_function,_checkFunction,_numberOfArguments,_allowSkippedArguments);
+					}
+					template <class NameType>
+					Function(const NameType& _name,const FunctionTypeNoEvaluatorContext& _function,const CheckFunctionType& _checkFunction,
+						int _numberOfArguments=-1,bool _allowSkippedArguments=false)
+					{
+						initialize(_name,_function,_checkFunction,_numberOfArguments,_allowSkippedArguments);
+					}
+					template <class NameType>
+					Function(const NameType& _name,const FunctionTypeNoContext& _function,const CheckFunctionType& _checkFunction,
+						int _numberOfArguments=-1,bool _allowSkippedArguments=false)
+					{
+						initialize(_name,_function,_checkFunction,_numberOfArguments,_allowSkippedArguments);
+					}
+					
+					ValueT execute(const vector<ValueT>& args,ContextT& context,const EvaluatorContext& evaluatorContext) const
 					{
 						if(!isDefined()) throw string()+"Internal error: executing an operator that is not defined";
 						if(numberOfArguments!=-1)
 						{
 							if(args.size()!=numberOfArguments) throw string()+"wrong number of arguments for function: '"+name+"'";
 						}
-						return function(args,context);
+						return function(args,context,evaluatorContext);
+					}
+					vector<ValueT> executeCheck(const vector<ValueT>& args,ContextT& context,const EvaluatorContext& evaluatorContext) const
+					{
+						if(!isDefined()) throw string()+"Internal error: executing check of an operator that is not defined";
+						if(checkFunction==nullptr) return args;
+						return checkFunction(args,context,evaluatorContext);
 					}
 				};
 				
@@ -1222,16 +1261,15 @@ class ComputerBuilder
 					vector<Function> binaryOperators;
 					vector<vector<string>> binaryOperatorLevels;
 					vector<Function> ternaryOperators;
-					vector<Function> functions;
 					vector<Function> bracketFunctionOperators;
 					vector<Function> bracketOperators;
 					
-					std::function<ValueT(const string&,ContextT&)> tokenResolutionFunction;
+					std::function<ValueT(const string&,ContextT&,const EvaluatorContext&)> tokenResolutionFunction;
 					
 					bool changed=true;
 				public:
 				
-				void setTokenResolutionFunction(const std::function<ValueT(const string&,ContextT&)>& f)
+				void setTokenResolutionFunction(const std::function<ValueT(const string&,ContextT&,const EvaluatorContext&)>& f)
 				{
 					tokenResolutionFunction=f;
 					changed=true;
@@ -1280,11 +1318,6 @@ class ComputerBuilder
 					ternaryOperators=f;
 					setFixedNumberOfArguments(ternaryOperators,3);
 					setAsStarterAndSeparator(ternaryOperators);
-					changed=true;
-				}
-				void setFunctions(const vector<Function>& f)
-				{
-					functions=f;
 					changed=true;
 				}
 				void setBracketFunctionOperators(const vector<Function>& f)
@@ -1417,14 +1450,6 @@ class ComputerBuilder
 						}
 						return nullptr;
 					}
-					bool parseFunctionName(const Code& code,size_t& t,Function*& function)
-					{
-						string token=code.tokens[t];
-						function=findFunctionWithName(functions,token);
-						if(function==nullptr) return false;
-						t++;
-						return true;
-					}
 					string getOperatorSeparator(Function*op)
 					{
 						if(op==nullptr) return string();
@@ -1453,10 +1478,16 @@ class ComputerBuilder
 						return string()+"unexpected symbol '"+token+"'";
 					}
 					
-					vector<ValueT> evaluateVariableArgumentOperatorArguments(const Code& code,size_t& t,ContextT& context,
-						const string& separator,const string& terminator,bool allowSkippedArguments)
+					ValueT executeVariableArgumentOperatorEvaluatingArguments(const Code& code,size_t& t,ContextT& context,
+						Function*op,const vector<ValueT>& startArguments,int subexpressionLevel)
 					{
-						vector<ValueT> arguments;
+						vector<ValueT> arguments=startArguments;
+						
+						string separator=getOperatorSeparator(op);
+						string terminator=getOperatorTerminator(op);
+						bool allowSkippedArguments=op->getAllowSkippedArguments();
+						
+						int argumentsWithoutCheck=0;
 						
 						for(;;)
 						{
@@ -1465,11 +1496,25 @@ class ComputerBuilder
 								if(code.tokens[t]==separator || code.tokens[t]==terminator)
 								{
 									if(tokenResolutionFunction==nullptr) throw unexpectedTokenMessage(code.tokens[t],__LINE__);
-									arguments.push_back(tokenResolutionFunction(string(),context));
+									
+									if(argumentsWithoutCheck)
+									{
+										arguments=op->executeCheck(arguments,context,EvaluatorContext(code,t,subexpressionLevel));
+										argumentsWithoutCheck=0;
+									}
+									arguments.push_back(tokenResolutionFunction(string(),context,EvaluatorContext(code,t,subexpressionLevel)));
+									argumentsWithoutCheck++;
 								}
 								else
 								{
-									arguments.push_back(evaluateExpressionPart(code,t,context,0));
+									if(argumentsWithoutCheck)
+									{
+										arguments=op->executeCheck(arguments,context,EvaluatorContext(code,t,subexpressionLevel));
+										argumentsWithoutCheck=0;
+									}
+									arguments.push_back(evaluateExpressionPart(code,t,context,0,subexpressionLevel+1));
+									argumentsWithoutCheck++;
+									
 									if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
 								}
 							}
@@ -1477,7 +1522,14 @@ class ComputerBuilder
 							{
 								if(code.tokens[t]==terminator) break;
 								
-								arguments.push_back(evaluateExpressionPart(code,t,context,0));
+								if(argumentsWithoutCheck)
+								{
+									arguments=op->executeCheck(arguments,context,EvaluatorContext(code,t,subexpressionLevel));
+									argumentsWithoutCheck=0;
+								}
+								arguments.push_back(evaluateExpressionPart(code,t,context,0,subexpressionLevel+1));
+								argumentsWithoutCheck++;
+								
 								if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
 							}
 							
@@ -1492,9 +1544,9 @@ class ComputerBuilder
 						
 						t++;
 						
-						return arguments;
+						return op->execute(arguments,context,EvaluatorContext(code,t,subexpressionLevel));
 					}
-					ValueT evaluateExpressionPart(const Code& code,size_t& t,ContextT& context,int level)
+					ValueT evaluateExpressionPart(const Code& code,size_t& t,ContextT& context,int level,int subexpressionLevel)
 					{
 						if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
 						
@@ -1507,43 +1559,27 @@ class ComputerBuilder
 						{
 							if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
 							
-							string separator=getOperatorSeparator(bracketOperator);
-							string terminator=getOperatorTerminator(bracketOperator);
-							
-							bool allowSkippedArguments=bracketOperator->getAllowSkippedArguments();
-							vector<ValueT> arguments=evaluateVariableArgumentOperatorArguments(code,t,context,separator,terminator,allowSkippedArguments);
-							
-							lvalue=bracketOperator->execute(arguments,context);
+							lvalue=executeVariableArgumentOperatorEvaluatingArguments(code,t,context,bracketOperator,vector<ValueT>(),subexpressionLevel);
 						}
 						else
 						{
-							Function*function;
-							if(parseFunctionName(code,t,function))
+							Function*unaryOperator;
+							if(parseOperator(code,t,unaryOperator,unaryOperators))
 							{
 								if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
-								if(code.tokens[t]!="(") throw expectedTokenMessage("(",code.tokens[t],__LINE__);
-								t++;
-								if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
 								
-								bool allowSkippedArguments=false;
-								vector<ValueT> arguments=evaluateVariableArgumentOperatorArguments(code,t,context,",",")",allowSkippedArguments);
+								vector<ValueT> arguments;
+								arguments=unaryOperator->executeCheck(arguments,context,EvaluatorContext(code,t,subexpressionLevel));
 								
-								lvalue=function->execute(arguments,context);
+								arguments.push_back(evaluateExpressionPart(code,t,context,getUnaryOperatorLevel(),subexpressionLevel+1));
+								
+								lvalue=unaryOperator->execute(arguments,context,EvaluatorContext(code,t,subexpressionLevel));
 							}
 							else
 							{
-								Function*unaryOperator;
-								if(parseOperator(code,t,unaryOperator,unaryOperators))
-								{
-									if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
-									lvalue=unaryOperator->execute(vector<ValueT>{evaluateExpressionPart(code,t,context,getUnaryOperatorLevel())},context);
-								}
-								else
-								{
-									if(tokenResolutionFunction==nullptr) throw unexpectedTokenMessage(code.tokens[t],__LINE__);
-									lvalue=tokenResolutionFunction(token,context);
-									t++;
-								}
+								if(tokenResolutionFunction==nullptr) throw unexpectedTokenMessage(code.tokens[t],__LINE__);
+								lvalue=tokenResolutionFunction(token,context,EvaluatorContext(code,t,subexpressionLevel));
+								t++;
 							}
 						}
 						
@@ -1561,7 +1597,11 @@ class ComputerBuilder
 									{
 										if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
 										
-										ValueT valueA=evaluateExpressionPart(code,t,context,0);
+										vector<ValueT> arguments=vector<ValueT>{lvalue};
+										arguments=ternaryOperator->executeCheck(arguments,context,EvaluatorContext(code,t,subexpressionLevel));
+										
+										arguments.push_back(evaluateExpressionPart(code,t,context,0,subexpressionLevel+1));
+										arguments=ternaryOperator->executeCheck(arguments,context,EvaluatorContext(code,t,subexpressionLevel));
 										
 										if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
 										string separator=getOperatorSeparator(ternaryOperator);
@@ -1569,9 +1609,9 @@ class ComputerBuilder
 										t++;
 										if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
 										
-										ValueT valueB=evaluateExpressionPart(code,t,context,0);
+										arguments.push_back(evaluateExpressionPart(code,t,context,0,subexpressionLevel+1));
 										
-										lvalue=ternaryOperator->execute(vector<ValueT>{lvalue,valueA,valueB},context);
+										lvalue=ternaryOperator->execute(arguments,context,EvaluatorContext(code,t,subexpressionLevel));
 									}
 									
 									break;
@@ -1587,15 +1627,11 @@ class ComputerBuilder
 									{
 										if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
 										
-										string separator=getOperatorSeparator(bracketFunctionOperator);
-										string terminator=getOperatorTerminator(bracketFunctionOperator);
+										vector<ValueT> arguments=vector<ValueT>{lvalue};
 										
-										bool allowSkippedArguments=bracketFunctionOperator->getAllowSkippedArguments();
-										vector<ValueT> arguments=evaluateVariableArgumentOperatorArguments(code,t,context,separator,terminator,allowSkippedArguments);
+										arguments=bracketFunctionOperator->executeCheck(arguments,context,EvaluatorContext(code,t,subexpressionLevel));
 										
-										arguments.insert(arguments.begin(),lvalue);
-										
-										lvalue=bracketFunctionOperator->execute(arguments,context);
+										lvalue=executeVariableArgumentOperatorEvaluatingArguments(code,t,context,bracketFunctionOperator,arguments,subexpressionLevel);
 										
 										continue;
 									}
@@ -1612,7 +1648,11 @@ class ComputerBuilder
 									{
 										if(t>=code.tokens.size()) throw expectedContinuationMessage(__LINE__);
 										
-										lvalue=binaryOperator->execute(vector<ValueT>{lvalue,evaluateExpressionPart(code,t,context,operatorLevel)},context);
+										vector<ValueT> arguments=binaryOperator->executeCheck(vector<ValueT>{lvalue},context,EvaluatorContext(code,t,subexpressionLevel));
+										
+										arguments.push_back(evaluateExpressionPart(code,t,context,operatorLevel,subexpressionLevel+1));
+										
+										lvalue=binaryOperator->execute(arguments,context,EvaluatorContext(code,t,subexpressionLevel));
 										
 										continue;
 									}
@@ -1636,7 +1676,7 @@ class ComputerBuilder
 					
 					Code code(expressionString);
 					size_t t=0;
-					ValueT result=evaluateExpressionPart(code,t,context,0);
+					ValueT result=evaluateExpressionPart(code,t,context,0,0);
 					
 					if(t<code.tokens.size()) throw unexpectedTokenMessage(code.tokens[t],__LINE__);
 					
@@ -1652,16 +1692,41 @@ class ComputerBuilder
 					
 					vector<TemplateArgument> variables;
 					
+					private:
+						bool evaluate=true;
+						int subexpressionLevelToEvaluateAgain=0;
+					public:
+					
 					Context(){}
 					explicit Context(const vector<TemplateArgument>& _variables)
 					{
 						variables=_variables;
 					}
+					
+					bool updateEvaluationState(int subexpressionLevel)
+					{
+						if(!evaluate && subexpressionLevel<=subexpressionLevelToEvaluateAgain)
+						{
+							evaluate=true;
+							subexpressionLevelToEvaluateAgain=0;
+						}
+						return evaluate;
+					}
+					void shortCircuit(int subexpressionLevel)
+					{
+						if(evaluate)
+						{
+							evaluate=false;
+							subexpressionLevelToEvaluateAgain=subexpressionLevel;
+						}
+					}
 				};
 				
 				private:
 					ExpressionEvaluator<string,Context> expressionEvaluator;
+					
 					using Function=ExpressionEvaluator<string,Context>::Function;
+					using EvaluatorContext=ExpressionEvaluator<string,Context>::EvaluatorContext;
 					
 					static int stringToInt(const string& str)
 					{
@@ -1685,41 +1750,50 @@ class ComputerBuilder
 				
 				TemplateExpressionEvaluator()
 				{
-					std::function<string(const string&,Context&)> tokenResolutionFunction=[](const string& token,const Context& context)->string
-					{
-						if(token.size()>0 && token[0]>='0' && token[0]<='9')
+					std::function<string(const string&,Context&,const EvaluatorContext&)> tokenResolutionFunction=
+						[](const string& token,Context& context,const EvaluatorContext& evaluatorContext)->string
 						{
-							return intToString(stringToInt(token));
-						}
-						else
-						{
-							int variableIndex=findWithName(context.variables,token);
-							if(variableIndex==-1) throw string()+"variable named '"+token+"' not found";
+							if(!context.updateEvaluationState(evaluatorContext.subexpressionLevel)) return string();
 							
-							return context.variables[variableIndex].value;
-						}
-					};
+							if(token.size()>0 && token[0]>='0' && token[0]<='9')
+							{
+								return intToString(stringToInt(token));
+							}
+							else
+							{
+								int variableIndex=findWithName(context.variables,token);
+								if(variableIndex==-1) throw string()+"variable named '"+token+"' not found";
+								
+								return context.variables[variableIndex].value;
+							}
+						};
 					
 					vector<Function> unaryOperators=vector<Function>
 					{
-						Function("-",[this](const vector<string>& args)->string
+						Function("-",[this](const vector<string>& args,Context& context,const EvaluatorContext& evaluatorContext)->string
 						{
+							if(!context.updateEvaluationState(evaluatorContext.subexpressionLevel)) return string();
+							
 							SafeInteger a=stringToSafeInteger(args[0]);
 							
 							SafeInteger r=-a;
 							
 							return safeIntegerToString(r);
 						}),
-						Function("~",[this](const vector<string>& args)->string
+						Function("~",[this](const vector<string>& args,Context& context,const EvaluatorContext& evaluatorContext)->string
 						{
+							if(!context.updateEvaluationState(evaluatorContext.subexpressionLevel)) return string();
+							
 							SafeInteger a=stringToSafeInteger(args[0]);
 							
 							SafeInteger r=~a;
 							
 							return safeIntegerToString(r);
 						}),
-						Function("!",[this](const vector<string>& args)->string
+						Function("!",[this](const vector<string>& args,Context& context,const EvaluatorContext& evaluatorContext)->string
 						{
+							if(!context.updateEvaluationState(evaluatorContext.subexpressionLevel)) return string();
+							
 							SafeInteger a=stringToSafeInteger(args[0]);
 							
 							SafeInteger r=!a;
@@ -1730,8 +1804,10 @@ class ComputerBuilder
 					
 					vector<Function> binaryOperators=vector<Function>
 					{
-						Function("**",[this](const vector<string>& args)->string
+						Function("**",[this](const vector<string>& args,Context& context,const EvaluatorContext& evaluatorContext)->string
 						{
+							if(!context.updateEvaluationState(evaluatorContext.subexpressionLevel)) return string();
+							
 							SafeInteger a=stringToSafeInteger(args[0]);
 							SafeInteger b=stringToSafeInteger(args[1]);
 							
@@ -1739,8 +1815,10 @@ class ComputerBuilder
 							
 							return safeIntegerToString(r);
 						}),
-						Function("*",[this](const vector<string>& args)->string
+						Function("*",[this](const vector<string>& args,Context& context,const EvaluatorContext& evaluatorContext)->string
 						{
+							if(!context.updateEvaluationState(evaluatorContext.subexpressionLevel)) return string();
+							
 							SafeInteger a=stringToSafeInteger(args[0]);
 							SafeInteger b=stringToSafeInteger(args[1]);
 							
@@ -1748,8 +1826,10 @@ class ComputerBuilder
 							
 							return safeIntegerToString(r);
 						}),
-						Function("/",[this](const vector<string>& args)->string
+						Function("/",[this](const vector<string>& args,Context& context,const EvaluatorContext& evaluatorContext)->string
 						{
+							if(!context.updateEvaluationState(evaluatorContext.subexpressionLevel)) return string();
+							
 							SafeInteger a=stringToSafeInteger(args[0]);
 							SafeInteger b=stringToSafeInteger(args[1]);
 							
@@ -1757,8 +1837,10 @@ class ComputerBuilder
 							
 							return safeIntegerToString(r);
 						}),
-						Function("%",[this](const vector<string>& args)->string
+						Function("%",[this](const vector<string>& args,Context& context,const EvaluatorContext& evaluatorContext)->string
 						{
+							if(!context.updateEvaluationState(evaluatorContext.subexpressionLevel)) return string();
+							
 							SafeInteger a=stringToSafeInteger(args[0]);
 							SafeInteger b=stringToSafeInteger(args[1]);
 							
@@ -1766,8 +1848,10 @@ class ComputerBuilder
 							
 							return safeIntegerToString(r);
 						}),
-						Function("+",[this](const vector<string>& args)->string
+						Function("+",[this](const vector<string>& args,Context& context,const EvaluatorContext& evaluatorContext)->string
 						{
+							if(!context.updateEvaluationState(evaluatorContext.subexpressionLevel)) return string();
+							
 							SafeInteger a=stringToSafeInteger(args[0]);
 							SafeInteger b=stringToSafeInteger(args[1]);
 							
@@ -1775,8 +1859,10 @@ class ComputerBuilder
 							
 							return safeIntegerToString(r);
 						}),
-						Function("-",[this](const vector<string>& args)->string
+						Function("-",[this](const vector<string>& args,Context& context,const EvaluatorContext& evaluatorContext)->string
 						{
+							if(!context.updateEvaluationState(evaluatorContext.subexpressionLevel)) return string();
+							
 							SafeInteger a=stringToSafeInteger(args[0]);
 							SafeInteger b=stringToSafeInteger(args[1]);
 							
@@ -1784,8 +1870,10 @@ class ComputerBuilder
 							
 							return safeIntegerToString(r);
 						}),
-						Function("<<",[this](const vector<string>& args)->string
+						Function("<<",[this](const vector<string>& args,Context& context,const EvaluatorContext& evaluatorContext)->string
 						{
+							if(!context.updateEvaluationState(evaluatorContext.subexpressionLevel)) return string();
+							
 							SafeInteger a=stringToSafeInteger(args[0]);
 							SafeInteger b=stringToSafeInteger(args[1]);
 							
@@ -1793,8 +1881,10 @@ class ComputerBuilder
 							
 							return safeIntegerToString(r);
 						}),
-						Function(">>",[this](const vector<string>& args)->string
+						Function(">>",[this](const vector<string>& args,Context& context,const EvaluatorContext& evaluatorContext)->string
 						{
+							if(!context.updateEvaluationState(evaluatorContext.subexpressionLevel)) return string();
+							
 							SafeInteger a=stringToSafeInteger(args[0]);
 							SafeInteger b=stringToSafeInteger(args[1]);
 							
@@ -1802,8 +1892,10 @@ class ComputerBuilder
 							
 							return safeIntegerToString(r);
 						}),
-						Function(">>>",[this](const vector<string>& args)->string
+						Function(">>>",[this](const vector<string>& args,Context& context,const EvaluatorContext& evaluatorContext)->string
 						{
+							if(!context.updateEvaluationState(evaluatorContext.subexpressionLevel)) return string();
+							
 							SafeInteger a=stringToSafeInteger(args[0]);
 							SafeInteger b=stringToSafeInteger(args[1]);
 							
@@ -1811,8 +1903,10 @@ class ComputerBuilder
 							
 							return safeIntegerToString(r);
 						}),
-						Function("<",[this](const vector<string>& args)->string
+						Function("<",[this](const vector<string>& args,Context& context,const EvaluatorContext& evaluatorContext)->string
 						{
+							if(!context.updateEvaluationState(evaluatorContext.subexpressionLevel)) return string();
+							
 							SafeInteger a=stringToSafeInteger(args[0]);
 							SafeInteger b=stringToSafeInteger(args[1]);
 							
@@ -1820,8 +1914,10 @@ class ComputerBuilder
 							
 							return safeIntegerToString(r);
 						}),
-						Function("<=",[this](const vector<string>& args)->string
+						Function("<=",[this](const vector<string>& args,Context& context,const EvaluatorContext& evaluatorContext)->string
 						{
+							if(!context.updateEvaluationState(evaluatorContext.subexpressionLevel)) return string();
+							
 							SafeInteger a=stringToSafeInteger(args[0]);
 							SafeInteger b=stringToSafeInteger(args[1]);
 							
@@ -1829,8 +1925,10 @@ class ComputerBuilder
 							
 							return safeIntegerToString(r);
 						}),
-						Function(">",[this](const vector<string>& args)->string
+						Function(">",[this](const vector<string>& args,Context& context,const EvaluatorContext& evaluatorContext)->string
 						{
+							if(!context.updateEvaluationState(evaluatorContext.subexpressionLevel)) return string();
+							
 							SafeInteger a=stringToSafeInteger(args[0]);
 							SafeInteger b=stringToSafeInteger(args[1]);
 							
@@ -1838,8 +1936,10 @@ class ComputerBuilder
 							
 							return safeIntegerToString(r);
 						}),
-						Function(">=",[this](const vector<string>& args)->string
+						Function(">=",[this](const vector<string>& args,Context& context,const EvaluatorContext& evaluatorContext)->string
 						{
+							if(!context.updateEvaluationState(evaluatorContext.subexpressionLevel)) return string();
+							
 							SafeInteger a=stringToSafeInteger(args[0]);
 							SafeInteger b=stringToSafeInteger(args[1]);
 							
@@ -1847,8 +1947,10 @@ class ComputerBuilder
 							
 							return safeIntegerToString(r);
 						}),
-						Function("==",[this](const vector<string>& args)->string
+						Function("==",[this](const vector<string>& args,Context& context,const EvaluatorContext& evaluatorContext)->string
 						{
+							if(!context.updateEvaluationState(evaluatorContext.subexpressionLevel)) return string();
+							
 							SafeInteger a=stringToSafeInteger(args[0]);
 							SafeInteger b=stringToSafeInteger(args[1]);
 							
@@ -1856,8 +1958,10 @@ class ComputerBuilder
 							
 							return safeIntegerToString(r);
 						}),
-						Function("!=",[this](const vector<string>& args)->string
+						Function("!=",[this](const vector<string>& args,Context& context,const EvaluatorContext& evaluatorContext)->string
 						{
+							if(!context.updateEvaluationState(evaluatorContext.subexpressionLevel)) return string();
+							
 							SafeInteger a=stringToSafeInteger(args[0]);
 							SafeInteger b=stringToSafeInteger(args[1]);
 							
@@ -1865,8 +1969,10 @@ class ComputerBuilder
 							
 							return safeIntegerToString(r);
 						}),
-						Function("&",[this](const vector<string>& args)->string
+						Function("&",[this](const vector<string>& args,Context& context,const EvaluatorContext& evaluatorContext)->string
 						{
+							if(!context.updateEvaluationState(evaluatorContext.subexpressionLevel)) return string();
+							
 							SafeInteger a=stringToSafeInteger(args[0]);
 							SafeInteger b=stringToSafeInteger(args[1]);
 							
@@ -1874,8 +1980,10 @@ class ComputerBuilder
 							
 							return safeIntegerToString(r);
 						}),
-						Function("^",[this](const vector<string>& args)->string
+						Function("^",[this](const vector<string>& args,Context& context,const EvaluatorContext& evaluatorContext)->string
 						{
+							if(!context.updateEvaluationState(evaluatorContext.subexpressionLevel)) return string();
+							
 							SafeInteger a=stringToSafeInteger(args[0]);
 							SafeInteger b=stringToSafeInteger(args[1]);
 							
@@ -1883,8 +1991,10 @@ class ComputerBuilder
 							
 							return safeIntegerToString(r);
 						}),
-						Function("|",[this](const vector<string>& args)->string
+						Function("|",[this](const vector<string>& args,Context& context,const EvaluatorContext& evaluatorContext)->string
 						{
+							if(!context.updateEvaluationState(evaluatorContext.subexpressionLevel)) return string();
+							
 							SafeInteger a=stringToSafeInteger(args[0]);
 							SafeInteger b=stringToSafeInteger(args[1]);
 							
@@ -1892,24 +2002,38 @@ class ComputerBuilder
 							
 							return safeIntegerToString(r);
 						}),
-						Function("&&",[this](const vector<string>& args)->string
+						Function("&&",[this](const vector<string>& args,Context& context,const EvaluatorContext& evaluatorContext)->string
 						{
-							SafeInteger a=stringToSafeInteger(args[0]);
-							SafeInteger b=stringToSafeInteger(args[1]);
+							if(!context.updateEvaluationState(evaluatorContext.subexpressionLevel)) return string();
 							
-							SafeInteger r= a && b;
-							
-							return safeIntegerToString(r);
-						}),
-						Function("||",[this](const vector<string>& args)->string
+							if(!stringToInt(args[0])) return intToString(0);
+							return intToString(stringToInt(args[1])!=0);
+						},
+							[this](const vector<string>& args,Context& context,const EvaluatorContext& evaluatorContext)->vector<string>
+							{
+								if(args.size()>0)
+								{
+									if(!stringToInt(args[0])) context.shortCircuit(evaluatorContext.subexpressionLevel);
+								}
+								return args;
+							}
+						),
+						Function("||",[this](const vector<string>& args,Context& context,const EvaluatorContext& evaluatorContext)->string
 						{
-							SafeInteger a=stringToSafeInteger(args[0]);
-							SafeInteger b=stringToSafeInteger(args[1]);
+							if(!context.updateEvaluationState(evaluatorContext.subexpressionLevel)) return string();
 							
-							SafeInteger r= a || b;
-							
-							return safeIntegerToString(r);
-						})
+							if(stringToInt(args[0])) return intToString(1);
+							return intToString(stringToInt(args[1])!=0);
+						},
+							[this](const vector<string>& args,Context& context,const EvaluatorContext& evaluatorContext)->vector<string>
+							{
+								if(args.size()>0)
+								{
+									if(stringToInt(args[0])) context.shortCircuit(evaluatorContext.subexpressionLevel);
+								}
+								return args;
+							}
+						)
 					};
 					vector<vector<string>> binaryOperatorLevels=vector<vector<string>>
 					{
@@ -1927,38 +2051,68 @@ class ComputerBuilder
 					};
 					
 					vector<Function> ternaryOperators=vector<Function>{
-						Function(vector<string>{"?",":"},[this](const vector<string>& args)->string
+						Function(vector<string>{"?",":"},[this](const vector<string>& args,Context& context,const EvaluatorContext& evaluatorContext)->string
 						{
-							return stringToInt(args[0])?args[1]:args[2];
-						})
+							if(!context.updateEvaluationState(evaluatorContext.subexpressionLevel)) return string();
+							
+							return stringToInt(args[0]) ? args[1] : args[2];
+						},
+							[this](const vector<string>& args,Context& context,const EvaluatorContext& evaluatorContext)->vector<string>
+							{
+								if(args.size()==1)
+								{
+									if(!stringToInt(args[0])) context.shortCircuit(evaluatorContext.subexpressionLevel);
+								}
+								else if(args.size()==2)
+								{
+									if(stringToInt(args[0])) context.shortCircuit(evaluatorContext.subexpressionLevel);
+									else context.updateEvaluationState(evaluatorContext.subexpressionLevel);
+								}
+								return args;
+							}
+						)
 					};
 					
-					vector<Function> functions=vector<Function>{
-						Function("isp2",[this](const vector<string>& args)->string
+					vector<Function> bracketOperators=vector<Function>{
+						Function(vector<string>{"(",")"},[this](const vector<string>& args,Context& context,const EvaluatorContext& evaluatorContext)->string
 						{
+							if(!context.updateEvaluationState(evaluatorContext.subexpressionLevel)) return string();
+							
+							return args[0];
+						},1),
+						Function(vector<string>{"isp2(",",",")"},[this](const vector<string>& args,Context& context,const EvaluatorContext& evaluatorContext)->string
+						{
+							if(!context.updateEvaluationState(evaluatorContext.subexpressionLevel)) return string();
+							
 							int a=stringToInt(args[0]);
 							int r=a>0 && std::has_single_bit(uint32_t(a));
 							
 							return intToString(r);
 						},1),
-						Function("log2",[this](const vector<string>& args)->string
+						Function(vector<string>{"log2(",",",")"},[this](const vector<string>& args,Context& context,const EvaluatorContext& evaluatorContext)->string
 						{
+							if(!context.updateEvaluationState(evaluatorContext.subexpressionLevel)) return string();
+							
 							int a=stringToInt(args[0]);
 							if(a<=0) throw string()+"logarithm of zero or negative number: "+std::to_string(a);
 							int r=int(std::countr_zero(std::bit_floor(uint32_t(a))));
 							
 							return intToString(r);
 						},1),
-						Function("p2floor",[this](const vector<string>& args)->string
+						Function(vector<string>{"p2floor(",",",")"},[this](const vector<string>& args,Context& context,const EvaluatorContext& evaluatorContext)->string
 						{
+							if(!context.updateEvaluationState(evaluatorContext.subexpressionLevel)) return string();
+							
 							int a=stringToInt(args[0]);
 							if(a<=0) throw string()+"invalid zero or negative number for function: "+std::to_string(a);
 							int r=int(std::bit_floor(uint32_t(a)));
 							
 							return intToString(r);
 						},1),
-						Function("p2ceil",[this](const vector<string>& args)->string
+						Function(vector<string>{"p2ceil(",",",")"},[this](const vector<string>& args,Context& context,const EvaluatorContext& evaluatorContext)->string
 						{
+							if(!context.updateEvaluationState(evaluatorContext.subexpressionLevel)) return string();
+							
 							int a=stringToInt(args[0]);
 							if(a<=0 || a>(1<<30)) throw string()+"invalid out of range number for function: "+std::to_string(a);
 							int r=int(std::bit_ceil(uint32_t(a)));
@@ -1967,18 +2121,10 @@ class ComputerBuilder
 						},1)
 					};
 					
-					vector<Function> bracketOperators=vector<Function>{
-						Function(vector<string>{"(",")"},[this](const vector<string>& args)->string
-						{
-							return args[0];
-						},1)
-					};
-					
 					expressionEvaluator.setTokenResolutionFunction(tokenResolutionFunction);
 					expressionEvaluator.setUnaryOperators(unaryOperators);
 					expressionEvaluator.setBinaryOperators(binaryOperators,binaryOperatorLevels);
 					expressionEvaluator.setTernaryOperators(ternaryOperators);
-					expressionEvaluator.setFunctions(functions);
 					expressionEvaluator.setBracketOperators(bracketOperators);
 				}
 				
@@ -2215,13 +2361,15 @@ class ComputerBuilder
 					};
 					
 					using ParserFunction=ExpressionEvaluator<InputExpression,ParserContext>::Function;
+					using ParserEvaluatorContext=ExpressionEvaluator<InputExpression,ParserContext>::EvaluatorContext;
+					
 					using EvaluatorFunction=std::function<BitOriginVector(const vector<BitOriginVector>&,const vector<int>&)>;
 					
 					class Operation
 					{
 						public:
 						
-						enum class Type{none,unaryOperator,binaryOperator,ternaryOperator,function,bracketOperator,bracketFunctionOperator};
+						enum class Type{none,unaryOperator,binaryOperator,ternaryOperator,bracketOperator,bracketFunctionOperator};
 						
 						Type type=Type::none;
 						ParserFunction parserFunction;
@@ -2240,7 +2388,9 @@ class ComputerBuilder
 					{
 						private:
 							ExpressionEvaluator<InputExpression,ParserContext> expressionEvaluator;
+							
 							using Function=ExpressionEvaluator<InputExpression,ParserContext>::Function;
+							using EvaluatorContext=ExpressionEvaluator<InputExpression,ParserContext>::EvaluatorContext;
 							
 							static int stringToInt(const string& str)
 							{
@@ -2253,26 +2403,27 @@ class ComputerBuilder
 						Parser(){}
 						Parser(vector<Operation>& operations)
 						{
-							std::function<InputExpression(const string&,ParserContext&)> tokenResolutionFunction=[](const string& token,const ParserContext& context)->InputExpression
-							{
-								if(token.size()>0 && token[0]>='0' && token[0]<='9')
+							std::function<InputExpression(const string&,ParserContext&,const EvaluatorContext&)> tokenResolutionFunction=
+								[](const string& token,ParserContext& context,const EvaluatorContext& evaluatorContext)->InputExpression
 								{
-									return InputExpression(stringToInt(token));
-								}
-								else
-								{
-									int variableIndex=findWithName(context.variables,token);
-									if(variableIndex==-1) throw string()+"variable named '"+token+"' not found";
-									
-									const Component::Variable& variable=context.variables[variableIndex];
-									if(variable.type==Component::Variable::Type::output)
+									if(token.size()>0 && token[0]>='0' && token[0]<='9')
 									{
-										throw string()+"reading from output variable: '"+token+"'";
+										return InputExpression(stringToInt(token));
 									}
-									
-									return InputExpression(variable,variableIndex);
-								}
-							};
+									else
+									{
+										int variableIndex=findWithName(context.variables,token);
+										if(variableIndex==-1) throw string()+"variable named '"+token+"' not found";
+										
+										const Component::Variable& variable=context.variables[variableIndex];
+										if(variable.type==Component::Variable::Type::output)
+										{
+											throw string()+"reading from output variable: '"+token+"'";
+										}
+										
+										return InputExpression(variable,variableIndex);
+									}
+								};
 							vector<Function> unaryOperators=vector<Function>{
 								Function("-",[this](const vector<InputExpression>& args)->InputExpression
 								{
@@ -2301,7 +2452,6 @@ class ComputerBuilder
 								vector<string>{"||"}
 							};
 							vector<Function> ternaryOperators=vector<Function>{};
-							vector<Function> functions=vector<Function>{};
 							vector<Function> bracketFunctionOperators=vector<Function>{};
 							vector<Function> bracketOperators=vector<Function>{
 								Function(vector<string>{"(",")"},[this](const vector<InputExpression>& args)->InputExpression
@@ -2316,7 +2466,6 @@ class ComputerBuilder
 								if(op.type==Operation::Type::unaryOperator) unaryOperators.push_back(op.parserFunction);
 								else if(op.type==Operation::Type::binaryOperator) binaryOperators.push_back(op.parserFunction);
 								else if(op.type==Operation::Type::ternaryOperator) ternaryOperators.push_back(op.parserFunction);
-								else if(op.type==Operation::Type::function) functions.push_back(op.parserFunction);
 								else if(op.type==Operation::Type::bracketFunctionOperator) bracketFunctionOperators.push_back(op.parserFunction);
 								else if(op.type==Operation::Type::bracketOperator) bracketOperators.push_back(op.parserFunction);
 							}
@@ -2325,7 +2474,6 @@ class ComputerBuilder
 							expressionEvaluator.setUnaryOperators(unaryOperators);
 							expressionEvaluator.setBinaryOperators(binaryOperators,binaryOperatorLevels);
 							expressionEvaluator.setTernaryOperators(ternaryOperators);
-							expressionEvaluator.setFunctions(functions);
 							expressionEvaluator.setBracketFunctionOperators(bracketFunctionOperators);
 							expressionEvaluator.setBracketOperators(bracketOperators);
 						}
@@ -2690,8 +2838,6 @@ class ComputerBuilder
 						}
 					}
 					
-					if(templateParameters.size()==0) throw errorString(__LINE__,lineIndex);
-					
 					constexpr int maximumNumberOfCombinations=65536;
 					
 					numberOfCombinations=1;
@@ -2742,6 +2888,8 @@ class ComputerBuilder
 						
 						string finalLine;
 						
+						bool ignoreThisLine=false;
+						
 						if(line.size()>0)
 						{
 							vector<string> lineSplitted=splitLineTemplates(line);
@@ -2756,18 +2904,27 @@ class ComputerBuilder
 									
 									if(str.size()==0) throw errorString("Empty template expression",lineIndex);
 									
-									bool putResult=true;
-									bool assertMode=false;
+									bool putResult=false;
+									bool combinationAssertMode=false;
+									bool lineAssertMode=false;
 									if(str[0]=='?')
 									{
-										putResult=false;
-										assertMode=true;
+										combinationAssertMode=true;
+										str=str.substr(1,str.size()-1);
+									}
+									else if(str[0]==':')
+									{
+										lineAssertMode=true;
 										str=str.substr(1,str.size()-1);
 									}
 									else if(str[0]=='/')
 									{
-										putResult=false;
+										if(templateLineIndex!=0) throw errorString("Template expression that does nothing",lineIndex);
 										str=str.substr(1,str.size()-1);
+									}
+									else
+									{
+										putResult=true;
 									}
 									
 									if(templateLineIndex==0)
@@ -2789,11 +2946,19 @@ class ComputerBuilder
 									{
 										string expressionResult=getTemplateArgumentExpressionResult(str,templateArguments,lineIndex);
 										
-										if(assertMode)
+										if(combinationAssertMode)
 										{
 											if(expressionResult=="0")
 											{
 												ignoreThisCombination=true;
+												break;
+											}
+										}
+										else if(lineAssertMode)
+										{
+											if(expressionResult=="0")
+											{
+												ignoreThisLine=true;
 												break;
 											}
 										}
@@ -2808,10 +2973,13 @@ class ComputerBuilder
 								{
 									finalLine+=str;
 								}
+								
+								if(ignoreThisCombination || ignoreThisLine) break;
 							}
 						}
 						
 						if(ignoreThisCombination) break;
+						if(ignoreThisLine) continue;
 						
 						finalLines.push_back(finalLine);
 					}
@@ -2839,17 +3007,9 @@ class ComputerBuilder
 					{
 						if(line.back()==':')
 						{
-							if(line.find_first_of("<")!=string::npos)
-							{
-								processTemplate(originalLineIndex);
-								continue;
-							}
+							processTemplate(originalLineIndex);
 						}
 					}
-					
-					addTemplateProcessedLine(line,originalLineIndex);
-					
-					originalLineIndex++;
 				}
 				
 				originalLinesProcessed=true;
