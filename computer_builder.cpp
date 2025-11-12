@@ -2,6 +2,144 @@ class ComputerBuilder
 {
 	public:
 	
+	class OptimizationOptions
+	{
+		public:
+		
+		bool verbose=false;
+		bool optimizeGates=false;
+		bool optimizeMemory=false;
+		int passes=-1;
+		int maxCombinations=1000000;
+		double maxTime=-1;
+	};
+	
+	class MessageQueue
+	{
+		private:
+			class TypeQueue
+			{
+				public:
+				
+				string name;
+				
+				uint64_t totalMessageCount=0;
+				
+				vector<string> messages;
+				
+				static constexpr int maxSize=4;
+				
+				TypeQueue(){}
+				TypeQueue(const string& _name)
+				{
+					name=_name;
+				}
+				
+				void add(const string& message)
+				{
+					totalMessageCount++;
+					if(messages.size()<maxSize) messages.push_back(message);
+					else
+					{
+						for(int i=0;i<maxSize;i++)
+						{
+							for(int j=0;j<i;j++)
+							{
+								if(messages[j]==messages[i])
+								{
+									messages[i]=message;
+									return;
+								}
+							}
+						}
+					}
+				}
+				void flush(const string& prefixText)
+				{
+					if(totalMessageCount>0)
+					{
+						if(totalMessageCount==1)
+						{
+							std::cout<<prefixText<<messages[0]<<std::endl;
+						}
+						else
+						{
+							std::cout<<prefixText<<name<<" (x"<<totalMessageCount<<"):";
+							for(int i=0;i<messages.size();i++)
+							{
+								std::cout<<"\n    '"<<messages[i]<<"'...";
+							}
+							std::cout<<std::endl;
+						}
+						
+						totalMessageCount=0;
+						messages.resize(0);
+					}
+				}
+			};
+			
+			vector<TypeQueue> typeQueues;
+			
+			string prefixText;
+			
+			uint64_t messagesPerFlush=1;
+			
+			void flushType(int index)
+			{
+				if(index>=0 && index<typeQueues.size())
+				{
+					typeQueues[index].flush(prefixText);
+					typeQueues.erase(typeQueues.begin()+index);
+				}
+			}
+		public:
+		
+		MessageQueue(const string& _prefixText=string(),uint64_t _messagesPerFlush=1)
+		{
+			prefixText=_prefixText;
+			messagesPerFlush=_messagesPerFlush;
+		}
+		void setPrefixText(const string& _prefixText)
+		{
+			prefixText=_prefixText;
+		}
+		void setMessagesPerFlush(uint64_t _messagesPerFlush)
+		{
+			messagesPerFlush=_messagesPerFlush;
+		}
+		void add(const string& messageType,const string& message)
+		{
+			int index=-1;
+			for(int i=0;i<typeQueues.size();i++)
+			{
+				if(typeQueues[i].name==messageType)
+				{
+					index=i;
+					break;
+				}
+			}
+			if(index==-1)
+			{
+				index=typeQueues.size();
+				typeQueues.emplace_back(messageType);
+			}
+			
+			typeQueues[index].add(message);
+			
+			if(typeQueues[index].totalMessageCount>=messagesPerFlush)
+			{
+				flushType(index);
+			}
+		}
+		void flush()
+		{
+			for(int i=int(typeQueues.size())-1;i>=0;i--)
+			{
+				flushType(i);
+			}
+		}
+	};
+	
 	class ComputerData
 	{
 		public:
@@ -20,6 +158,181 @@ class ComputerBuilder
 			{
 				type=_type;
 				index=_index;
+			}
+			
+			bool operator ==(const Input& b) const
+			{
+				return type==b.type && index==b.index;
+			}
+			bool operator !=(const Input& b) const
+			{
+				return !(*this==b);
+			}
+		};
+		
+		class Pointer
+		{
+			public:
+			
+			enum class Type{none,computerInput,computerOutput,computerMemory,nandGate,constant,yesGate};
+			
+			Type type=Type::none;
+			int index=0;
+			
+			constexpr Pointer(){}
+			constexpr Pointer(const Type& _type,int _index)
+			{
+				type=_type;
+				index=_index;
+			}
+			explicit Pointer(const Input& input)
+			{
+				if(input.type==Input::Type::computerInput) type=Type::computerInput;
+				else if(input.type==Input::Type::computerMemory) type=Type::computerMemory;
+				else if(input.type==Input::Type::nandGate) type=Type::nandGate;
+				else if(input.type==Input::Type::constant) type=Type::constant;
+				else if(input.type==Input::Type::yesGate) type=Type::yesGate;
+				index=input.index;
+			}
+			explicit operator Input() const
+			{
+				Input::Type inputType;
+				if(type==Type::computerInput) inputType=Input::Type::computerInput;
+				else if(type==Type::computerMemory) inputType=Input::Type::computerMemory;
+				else if(type==Type::nandGate) inputType=Input::Type::nandGate;
+				else if(type==Type::constant) inputType=Input::Type::constant;
+				else if(type==Type::yesGate) inputType=Input::Type::yesGate;
+				else throw string()+"Invalid pointer to input conversion";
+				return Input(inputType,index);
+			}
+			
+			bool isNone() const
+			{
+				return type==Type::none;
+			}
+			
+			string toString() const
+			{
+				string str;
+				if(type==Type::none) str="none";
+				else if(type==Type::computerInput) str="input";
+				else if(type==Type::computerOutput) str="output";
+				else if(type==Type::computerMemory) str="memory";
+				else if(type==Type::nandGate) str="nandgate";
+				else if(type==Type::constant) str="constant";
+				else if(type==Type::yesGate) str="yesgate";
+				else str="INVALID";
+				str+=std::to_string(index);
+				return str;
+			}
+			
+			vector<Pointer> getInputs(const ComputerData& computer) const
+			{
+				vector<Pointer> inputs;
+				if(type==Type::none){}
+				else if(type==Type::computerInput){}
+				else if(type==Type::computerOutput) inputs.push_back(Pointer(computer.outputs[index].input));
+				else if(type==Type::computerMemory) inputs.push_back(Pointer(computer.memory[index].input));
+				else if(type==Type::nandGate)
+				{
+					inputs.push_back(Pointer(computer.nandGates[index].inputA));
+					inputs.push_back(Pointer(computer.nandGates[index].inputB));
+				}
+				else if(type==Type::constant){}
+				else if(type==Type::yesGate) inputs.push_back(Pointer(computer.yesGates[index].input));
+				return inputs;
+			}
+			static vector<Pointer> getDistinct(const vector<Pointer>& pointers)
+			{
+				vector<Pointer> pointersOut=pointers;
+				for(int i=0;i<pointersOut.size();i++)
+				{
+					for(int j=0;j<i;j++)
+					{
+						if(pointersOut[j]==pointersOut[i])
+						{
+							pointersOut.erase(pointersOut.begin()+i);
+							i--;
+							break;
+						}
+					}
+				}
+				return pointersOut;
+			}
+			vector<Pointer> getInputsDistinct(const ComputerData& computer) const
+			{
+				return getDistinct(getInputs(computer));
+			}
+			vector<Input*> getInputPtrs(ComputerData& computer) const
+			{
+				vector<Input*> inputPtrs;
+				if(type==Type::none){}
+				else if(type==Type::computerInput){}
+				else if(type==Type::computerOutput) inputPtrs.push_back(&computer.outputs[index].input);
+				else if(type==Type::computerMemory) inputPtrs.push_back(&computer.memory[index].input);
+				else if(type==Type::nandGate)
+				{
+					inputPtrs.push_back(&computer.nandGates[index].inputA);
+					inputPtrs.push_back(&computer.nandGates[index].inputB);
+				}
+				else if(type==Type::constant){}
+				else if(type==Type::yesGate) inputPtrs.push_back(&computer.yesGates[index].input);
+				return inputPtrs;
+			}
+			vector<Pointer> findOutputs(const ComputerData& computer) const
+			{
+				vector<Pointer> outputs;
+				
+				if(type==Type::computerInput || type==Type::computerMemory || type==Type::nandGate || type==Type::yesGate)
+				{
+					Input input(*this);
+					
+					for(int i=0;i<computer.outputs.size();i++)
+					{
+						if(computer.outputs[i].input==input) outputs.emplace_back(Type::computerOutput,i);
+					}
+					for(int i=0;i<computer.memory.size();i++)
+					{
+						if(computer.memory[i].input==input) outputs.emplace_back(Type::computerMemory,i);
+					}
+					for(int i=0;i<computer.nandGates.size();i++)
+					{
+						if(computer.nandGates[i].inputA==input) outputs.emplace_back(Type::nandGate,i);
+						if(computer.nandGates[i].inputB==input) outputs.emplace_back(Type::nandGate,i);
+					}
+				}
+				
+				return outputs;
+			}
+			vector<Pointer> findOutputsDistinct(const ComputerData& computer) const
+			{
+				return getDistinct(findOutputs(computer));
+			}
+			
+			bool operator ==(const Pointer& b) const
+			{
+				return type==b.type && index==b.index;
+			}
+			bool operator !=(const Pointer& b) const
+			{
+				return !(*this==b);
+			}
+			bool operator <(const Pointer& b) const
+			{
+				if(type!=b.type) return type<b.type;
+				else return index<b.index;
+			}
+			bool operator >(const Pointer& b) const
+			{
+				return b<*this;
+			}
+			bool operator <=(const Pointer& b) const
+			{
+				return !(*this>b);
+			}
+			bool operator >=(const Pointer& b) const
+			{
+				return !(*this<b);
 			}
 		};
 		
@@ -75,6 +388,14 @@ class ComputerBuilder
 		
 		vector<vector<int>> nandGates_lineIndexes_array;
 		
+		void removeLineIndexData()
+		{
+			for(int i=0;i<nandGates.size();i++)
+			{
+				nandGates[i].lineIndexesIndex=-1;
+			}
+			nandGates_lineIndexes_array.resize(0);
+		}
 		int addInputs(int count)
 		{
 			int index=numberOfInputs;
@@ -647,7 +968,7 @@ class ComputerBuilder
 		vector<Component> components;
 		
 		Code(){}
-		Code(const string& codeText)
+		explicit Code(const string& codeText)
 		{
 			string line;
 			for(size_t p=0;p<codeText.size();p++)
@@ -3102,8 +3423,12 @@ class ComputerBuilder
 						if(line.back()==':')
 						{
 							processTemplate(originalLineIndex);
+							continue;
 						}
 					}
+					
+					addTemplateProcessedLine(line,originalLineIndex);
+					originalLineIndex++;
 				}
 				
 				originalLinesProcessed=true;
@@ -3897,9 +4222,9 @@ class ComputerBuilder
 				}
 				computer.yesGates.resize(0);
 			}
-			void reorderNandGates(ComputerData& computer)
+			void reorderNandGatesInValidOrder(ComputerData& computer)
 			{
-				vector<int> order(computer.nandGates.size(),-1);
+				vector<int> orderOldToNew(computer.nandGates.size(),-1);
 				int orderedCount=0;
 				
 				for(;;)
@@ -3907,19 +4232,19 @@ class ComputerBuilder
 					int orderedCountOld=orderedCount;
 					for(int i=0;i<computer.nandGates.size();i++)
 					{
-						if(order[i]==-1)
+						if(orderOldToNew[i]==-1)
 						{
 							ComputerData::NandGate& nandGate=computer.nandGates[i];
 							if(nandGate.inputA.type==ComputerData::Input::Type::nandGate)
 							{
-								if(order[nandGate.inputA.index]==-1) continue;
+								if(orderOldToNew[nandGate.inputA.index]==-1) continue;
 							}
 							if(nandGate.inputB.type==ComputerData::Input::Type::nandGate)
 							{
-								if(order[nandGate.inputB.index]==-1) continue;
+								if(orderOldToNew[nandGate.inputB.index]==-1) continue;
 							}
 							
-							order[i]=orderedCount;
+							orderOldToNew[i]=orderedCount;
 							orderedCount++;
 						}
 					}
@@ -3932,7 +4257,7 @@ class ComputerBuilder
 						vector<vector<int>> otherLineIndexes;
 						for(int i=0;i<computer.nandGates.size();i++)
 						{
-							if(order[i]==-1)
+							if(orderOldToNew[i]==-1)
 							{
 								int lineIndexesIndex=computer.nandGates[i].lineIndexesIndex;
 								if(lineIndexesIndex==-1)
@@ -4017,21 +4342,31 @@ class ComputerBuilder
 					}
 				}
 				
-				vector<ComputerData::NandGate> newNandGates(computer.nandGates.size());
-				for(int i=0;i<computer.nandGates.size();i++)
+				vector<int> orderNewToOld(orderOldToNew.size());
+				for(int i=0;i<orderOldToNew.size();i++)
 				{
-					ComputerData::NandGate nandGate=computer.nandGates[i];
+					orderNewToOld[orderOldToNew[i]]=i;
+				}
+				
+				reorderNandGates(computer,orderNewToOld,orderOldToNew);
+			}
+			static void reorderNandGates(ComputerData& computer,const vector<int>& orderNewToOld,const vector<int>& orderOldToNew)
+			{
+				vector<ComputerData::NandGate> newNandGates(orderNewToOld.size());
+				for(int i=0;i<orderNewToOld.size();i++)
+				{
+					ComputerData::NandGate nandGate=computer.nandGates[orderNewToOld[i]];
 					
 					if(nandGate.inputA.type==ComputerData::Input::Type::nandGate)
 					{
-						nandGate.inputA.index=order[nandGate.inputA.index];
+						nandGate.inputA.index=orderOldToNew[nandGate.inputA.index];
 					}
 					if(nandGate.inputB.type==ComputerData::Input::Type::nandGate)
 					{
-						nandGate.inputB.index=order[nandGate.inputB.index];
+						nandGate.inputB.index=orderOldToNew[nandGate.inputB.index];
 					}
 					
-					newNandGates[order[i]]=nandGate;
+					newNandGates[i]=nandGate;
 				}
 				
 				computer.nandGates=newNandGates;
@@ -4042,7 +4377,7 @@ class ComputerBuilder
 					
 					if(memory.input.type==ComputerData::Input::Type::nandGate)
 					{
-						memory.input.index=order[memory.input.index];
+						memory.input.index=orderOldToNew[memory.input.index];
 					}
 				}
 				for(int i=0;i<computer.outputs.size();i++)
@@ -4051,45 +4386,1913 @@ class ComputerBuilder
 					
 					if(output.input.type==ComputerData::Input::Type::nandGate)
 					{
-						output.input.index=order[output.input.index];
+						output.input.index=orderOldToNew[output.input.index];
 					}
 				}
 			}
-			void compileComponents(ComputerData& computer)
+			static void reorderMemory(ComputerData& computer,const vector<int>& orderNewToOld,const vector<int>& orderOldToNew)
 			{
-				int mainComponentIndex=findWithName(components,"main");
-				if(mainComponentIndex==-1) throw string("Error: 'main' component not found");
+				vector<ComputerData::OutputGate> newMemory(orderNewToOld.size());
+				for(int i=0;i<orderNewToOld.size();i++)
+				{
+					ComputerData::OutputGate memory=computer.memory[orderNewToOld[i]];
+					
+					if(memory.input.type==ComputerData::Input::Type::computerMemory)
+					{
+						memory.input.index=orderOldToNew[memory.input.index];
+					}
+					
+					newMemory[i]=memory;
+				}
+				
+				computer.memory=newMemory;
+				
+				for(int i=0;i<computer.nandGates.size();i++)
+				{
+					ComputerData::NandGate& nandGate=computer.nandGates[i];
+					
+					if(nandGate.inputA.type==ComputerData::Input::Type::computerMemory)
+					{
+						nandGate.inputA.index=orderOldToNew[nandGate.inputA.index];
+					}
+					if(nandGate.inputB.type==ComputerData::Input::Type::computerMemory)
+					{
+						nandGate.inputB.index=orderOldToNew[nandGate.inputB.index];
+					}
+				}
+				for(int i=0;i<computer.outputs.size();i++)
+				{
+					ComputerData::OutputGate& output=computer.outputs[i];
+					
+					if(output.input.type==ComputerData::Input::Type::computerMemory)
+					{
+						output.input.index=orderOldToNew[output.input.index];
+					}
+				}
+			}
+			static int pruneUnusedNandGates(ComputerData& computer)
+			{
+				vector<int> used(computer.nandGates.size(),false);
+				int usedCount=0;
+				
+				for(int i=0;i<computer.memory.size();i++)
+				{
+					ComputerData::OutputGate& memory=computer.memory[i];
+					
+					if(memory.input.type==ComputerData::Input::Type::nandGate)
+					{
+						int index=memory.input.index;
+						if(!used[index])
+						{
+							used[index]=true;
+							usedCount++;
+						}
+					}
+				}
+				for(int i=0;i<computer.outputs.size();i++)
+				{
+					ComputerData::OutputGate& output=computer.outputs[i];
+					
+					if(output.input.type==ComputerData::Input::Type::nandGate)
+					{
+						int index=output.input.index;
+						if(!used[index])
+						{
+							used[index]=true;
+							usedCount++;
+						}
+					}
+				}
+				
+				while(usedCount<used.size())
+				{
+					int usedCountOld=usedCount;
+					
+					for(int i=0;i<computer.nandGates.size();i++)
+					{
+						if(used[i])
+						{
+							ComputerData::NandGate& nandGate=computer.nandGates[i];
+							if(nandGate.inputA.type==ComputerData::Input::Type::nandGate)
+							{
+								int index=nandGate.inputA.index;
+								if(!used[index])
+								{
+									used[index]=true;
+									usedCount++;
+								}
+							}
+							if(nandGate.inputB.type==ComputerData::Input::Type::nandGate)
+							{
+								int index=nandGate.inputB.index;
+								if(!used[index])
+								{
+									used[index]=true;
+									usedCount++;
+								}
+							}
+						}
+					}
+					
+					if(usedCount==usedCountOld) break;
+				}
+				
+				vector<int> orderNewToOld(usedCount);
+				vector<int> orderOldToNew(used.size());
+				for(int i=0,count=0;i<used.size();i++)
+				{
+					if(used[i])
+					{
+						orderOldToNew[i]=count;
+						orderNewToOld[count]=i;
+						count++;
+					}
+				}
+				
+				reorderNandGates(computer,orderNewToOld,orderOldToNew);
+				
+				return used.size()-usedCount;
+			}
+			static int pruneUnusedMemory(ComputerData& computer)
+			{
+				vector<int> used(computer.memory.size(),false);
+				int usedCount=0;
+				
+				for(int i=0;i<computer.memory.size();i++)
+				{
+					ComputerData::OutputGate& memory=computer.memory[i];
+					
+					if(memory.input.type==ComputerData::Input::Type::computerMemory)
+					{
+						int index=memory.input.index;
+						if(!used[index])
+						{
+							used[index]=true;
+							usedCount++;
+						}
+					}
+				}
+				for(int i=0;i<computer.outputs.size();i++)
+				{
+					ComputerData::OutputGate& output=computer.outputs[i];
+					
+					if(output.input.type==ComputerData::Input::Type::computerMemory)
+					{
+						int index=output.input.index;
+						if(!used[index])
+						{
+							used[index]=true;
+							usedCount++;
+						}
+					}
+				}
+				for(int i=0;i<computer.nandGates.size();i++)
+				{
+					ComputerData::NandGate& nandGate=computer.nandGates[i];
+					if(nandGate.inputA.type==ComputerData::Input::Type::computerMemory)
+					{
+						int index=nandGate.inputA.index;
+						if(!used[index])
+						{
+							used[index]=true;
+							usedCount++;
+						}
+					}
+					if(nandGate.inputB.type==ComputerData::Input::Type::computerMemory)
+					{
+						int index=nandGate.inputB.index;
+						if(!used[index])
+						{
+							used[index]=true;
+							usedCount++;
+						}
+					}
+				}
+				
+				vector<int> orderNewToOld(usedCount);
+				vector<int> orderOldToNew(used.size());
+				for(int i=0,count=0;i<used.size();i++)
+				{
+					if(used[i])
+					{
+						orderOldToNew[i]=count;
+						orderNewToOld[count]=i;
+						count++;
+					}
+				}
+				
+				reorderMemory(computer,orderNewToOld,orderOldToNew);
+				
+				return used.size()-usedCount;
+			}
+			void compileComponents(ComputerData& computer,const string& mainComponentName="main")
+			{
+				int mainComponentIndex=findWithName(components,mainComponentName);
+				if(mainComponentIndex==-1) throw string()+"Error: '"+mainComponentName+"' component not found";
 				
 				ComponentContext context;
-				
 				compileComponent(computer,mainComponentIndex,context);
 				
 				optimizeYesGatesAway(computer);
+				reorderNandGatesInValidOrder(computer);
+				computer.removeLineIndexData();
+			}
+			
+			class Optimizer
+			{
+				private:
+					class ConnectionChange
+					{
+						public:
+						
+						ComputerData::Pointer oldInputComponent;
+						ComputerData::Pointer newInputComponent;
+						int outputComponentInputIndex=0;
+						ComputerData::Pointer outputComponent;
+						
+						ConnectionChange(){}
+						ConnectionChange(const ComputerData::Pointer& _oldInputComponent,const ComputerData::Pointer& _newInputComponent,
+							int _outputComponentInputIndex,const ComputerData::Pointer& _outputComponent)
+						{
+							oldInputComponent=_oldInputComponent;
+							newInputComponent=_newInputComponent;
+							outputComponentInputIndex=_outputComponentInputIndex;
+							outputComponent=_outputComponent;
+						}
+					};
+					
+					class ComputerOutputData
+					{
+						public:
+						
+						static constexpr bool checkInRange=true;
+						
+						vector<vector<ComputerData::Pointer>> inputs;
+						vector<vector<ComputerData::Pointer>> memory;
+						vector<vector<ComputerData::Pointer>> nandGates;
+						
+						vector<ComputerData::Pointer> getOutputs(const ComputerData::Pointer& component)
+						{
+							vector<ComputerData::Pointer>*outputsPtr=getOutputsPtr(component);
+							
+							if(outputsPtr==nullptr) return vector<ComputerData::Pointer>();
+							
+							return *outputsPtr;
+						}
+						vector<ComputerData::Pointer>*getOutputsPtr(const ComputerData::Pointer& component)
+						{
+							vector<vector<ComputerData::Pointer>>*vectorPtr=getVectorPtr(component);
+							
+							if(vectorPtr==nullptr) return nullptr;
+							if(checkInRange)
+							{
+								if(component.index<0 || component.index>=vectorPtr->size()) throw string()+"Getting outputs of a component out of range";
+							}
+							
+							return &(*vectorPtr)[component.index];
+						}
+						private:
+							vector<vector<ComputerData::Pointer>>*getVectorPtr(const ComputerData::Pointer& component)
+							{
+								vector<vector<ComputerData::Pointer>>*vectorPtr=nullptr;
+								
+								if(component.type==ComputerData::Pointer::Type::computerInput)
+								{
+									vectorPtr=&inputs;
+								}
+								else if(component.type==ComputerData::Pointer::Type::computerMemory)
+								{
+									vectorPtr=&memory;
+								}
+								else if(component.type==ComputerData::Pointer::Type::nandGate)
+								{
+									vectorPtr=&nandGates;
+								}
+								
+								return vectorPtr;
+							}
+						public:
+						void addOutput(const ComputerData::Pointer& component,const ComputerData::Pointer& output)
+						{
+							vector<vector<ComputerData::Pointer>>*vectorPtr=getVectorPtr(component);
+							
+							if(vectorPtr==nullptr) throw string()+"Adding output to a component with no outputs allowed";
+							if(component.index<0 || component.index>=vectorPtr->size()) throw string()+"Adding output to a component out of range";
+							
+							(*vectorPtr)[component.index].push_back(output);
+						}
+						void removeOutput(const ComputerData::Pointer& component,const ComputerData::Pointer& output)
+						{
+							vector<vector<ComputerData::Pointer>>*vectorPtr=getVectorPtr(component);
+							
+							if(vectorPtr==nullptr) throw string()+"Removing output from a component with no outputs allowed";
+							if(component.index<0 || component.index>=vectorPtr->size()) throw string()+"Removing output from a component out of range";
+							
+							vector<ComputerData::Pointer>& v=(*vectorPtr)[component.index];
+							
+							for(int i=0;i<v.size();i++)
+							{
+								if(v[i]==output)
+								{
+									v.erase(v.begin()+i);
+									break;
+								}
+							}
+						}
+						void change(const ConnectionChange& connectionChange)
+						{
+							if(connectionChange.outputComponent.type!=ComputerData::Pointer::Type::computerMemory)
+							{
+								if(connectionChange.newInputComponent==connectionChange.outputComponent
+									|| connectionChange.oldInputComponent==connectionChange.outputComponent) throw string()+"Input and output are the same component";
+							}
+							
+							if(connectionChange.newInputComponent!=connectionChange.oldInputComponent)
+							{
+								if(connectionChange.oldInputComponent.type!=ComputerData::Pointer::Type::constant)
+								{
+									removeOutput(connectionChange.oldInputComponent,connectionChange.outputComponent);
+								}
+								
+								if(connectionChange.newInputComponent.type!=ComputerData::Pointer::Type::constant)
+								{
+									addOutput(connectionChange.newInputComponent,connectionChange.outputComponent);
+								}
+							}
+						}
+						void update(ComputerData& computer)
+						{
+							inputs=vector<vector<ComputerData::Pointer>>(computer.numberOfInputs);
+							memory=vector<vector<ComputerData::Pointer>>(computer.memory.size());
+							nandGates=vector<vector<ComputerData::Pointer>>(computer.nandGates.size());
+							
+							vector<ComputerData::Pointer> outputComponents;
+							for(int i=0;i<computer.outputs.size();i++)
+							{
+								outputComponents.emplace_back(ComputerData::Pointer::Type::computerOutput,i);
+							}
+							for(int i=0;i<computer.memory.size();i++)
+							{
+								outputComponents.emplace_back(ComputerData::Pointer::Type::computerMemory,i);
+							}
+							for(int i=0;i<computer.nandGates.size();i++)
+							{
+								outputComponents.emplace_back(ComputerData::Pointer::Type::nandGate,i);
+							}
+							
+							for(int i=0;i<outputComponents.size();i++)
+							{
+								vector<ComputerData::Pointer> inputs=outputComponents[i].getInputsDistinct(computer);
+								for(int j=0;j<inputs.size();j++)
+								{
+									if(inputs[j].type!=ComputerData::Pointer::Type::constant)
+									{
+										addOutput(inputs[j],outputComponents[i]);
+									}
+								}
+							}
+						}
+						vector<ComputerData::Pointer> getAllPointers()
+						{
+							vector<ComputerData::Pointer> pointers;
+							for(int i=0;i<inputs.size();i++)
+							{
+								pointers.emplace_back(ComputerData::Pointer::Type::computerInput,i);
+							}
+							for(int i=0;i<memory.size();i++)
+							{
+								pointers.emplace_back(ComputerData::Pointer::Type::computerMemory,i);
+							}
+							for(int i=0;i<nandGates.size();i++)
+							{
+								pointers.emplace_back(ComputerData::Pointer::Type::nandGate,i);
+							}
+							return pointers;
+						}
+					};
+					
+					class Rule
+					{
+						public:
+						
+						string name;
+						
+						ComputerData pattern;
+						ComputerOutputData patternOutputData;
+						
+						ComputerData::Pointer patternMainOutput;
+						
+						ComputerData resultingPattern;
+						
+						Rule(){}
+						Rule(const string& _name,const ComputerData& _pattern,const ComputerData& _resultingPattern)
+						{
+							name=_name;
+							pattern=_pattern;
+							resultingPattern=_resultingPattern;
+							
+							if(pattern.numberOfInputs!=resultingPattern.numberOfInputs) throw string()+"Number of inputs do not match";
+							if(pattern.outputs.size()!=resultingPattern.outputs.size()) throw string()+"Number of outputs do not match";
+							if(pattern.memory.size()!=resultingPattern.memory.size()) throw string()+"Number of memory bits do not match";
+							if(resultingPattern.nandGates.size()>pattern.nandGates.size())
+							{
+								throw string()+"The result of the pattern has more nand gates than the pattern";
+							}
+							if(pattern.outputs.size()+pattern.memory.size()+pattern.nandGates.size()==0)
+							{
+								throw string()+"The pattern has no outputs or gates or memory";
+							}
+							if(pattern.outputs.size()==0)
+							{
+								throw string()+"The pattern has no outputs";
+							}
+							
+							patternOutputData.update(pattern);
+							
+							if(hasNonOutputComponentWithNoOutputs(patternOutputData))
+							{
+								throw string()+"The pattern has non output components with no output (unused components)";
+							}
+							if(hasDuplicatedOutputOutputs(patternOutputData))
+							{
+								throw string()+"The pattern has more than one pattern output with the same input";
+							}
+							
+							patternMainOutput=chooseMainOutput(pattern,patternOutputData);
+							
+							if(!isSingleConnectedNetwork(pattern,patternOutputData,patternMainOutput))
+							{
+								throw string()+"The pattern is not a single connected network";
+							}
+						}
+						
+						private:
+							template <class T>
+							class Stack
+							{
+								private:
+									vector<T> elements;
+									size_t internal_size=0;
+									
+									vector<size_t> internal_baseSize;
+									
+									static constexpr int growthFactor=2;
+									
+									T*push(size_t _size)
+									{
+										size_t newSize=internal_size+_size;
+										if(newSize>elements.size()) reserve(newSize>internal_size*growthFactor ? newSize : internal_size*growthFactor);
+										size_t offset=internal_size;
+										internal_size=newSize;
+										return &elements[offset];
+									}
+								public:
+								
+								class Slice
+								{
+									private:
+										Stack*internal_stackPtr=nullptr;
+										T*internal_elementPtr=nullptr;
+										size_t internal_size=0;
+									public:
+									
+									void push(Stack& stack,size_t _size)
+									{
+										if(internal_stackPtr!=nullptr)
+										{
+											throw string()+"Trying to push a slice that was already pushed";
+										}
+										internal_stackPtr=&stack;
+										internal_elementPtr=stack.push(_size);
+										internal_size=_size;
+									}
+									
+									Slice(){}
+									Slice(const Slice& other)=delete;
+									
+									void operator =(const Slice& other)
+									{
+										if(internal_stackPtr==nullptr)
+										{
+											throw string()+"Assigning a slice to a slice with no stack";
+										}
+										if(other.internal_stackPtr==nullptr)
+										{
+											throw string()+"Assigning a slice with no stack to another slice";
+										}
+										if(internal_size!=other.internal_size)
+										{
+											throw string()+"Assigning a slice to another slice with different size";
+										}
+										for(size_t i=0;i<internal_size;i++)
+										{
+											internal_elementPtr[i]=other.internal_elementPtr[i];
+										}
+									}
+									
+									explicit operator vector<T>() const
+									{
+										vector<T> v(internal_size);
+										for(size_t i=0;i<internal_size;i++)
+										{
+											v[i]=internal_elementPtr[i];
+										}
+										return v;
+									}
+									
+									inline size_t size() const
+									{
+										return internal_size;
+									}
+									inline T& operator [](size_t index) const
+									{
+										return internal_elementPtr[index];
+									}
+								};
+								
+								Stack(){}
+								Stack(size_t sizeToReserve)
+								{
+									reserve(sizeToReserve);
+								}
+								
+								void pushBase()
+								{
+									internal_baseSize.push_back(internal_size);
+								}
+								void popBase()
+								{
+									if(internal_baseSize.size()>0)
+									{
+										internal_size=internal_baseSize.back();
+										internal_baseSize.resize(internal_baseSize.size()-1);
+									}
+									else internal_size=0;
+								}
+								
+								size_t size() const
+								{
+									return internal_size;
+								}
+								void reserve(size_t size)
+								{
+									elements.resize(size);
+								}
+								void reserveBase(size_t size)
+								{
+									internal_baseSize.reserve(size);
+								}
+							};
+							
+							template <class T>
+							class StackFrame
+							{
+								private:
+									T*stackPtr=nullptr;
+								public:
+								
+								StackFrame(T& stack)
+								{
+									stack.pushBase();
+									stackPtr=&stack;
+								}
+								~StackFrame()
+								{
+									stackPtr->popBase();
+								}
+							};
+							
+							using PointerSlice=Stack<ComputerData::Pointer>::Slice;
+							
+							class ComponentPointerStack
+							{
+								public:
+								
+								Stack<ComputerData::Pointer> stack;
+								
+								int inputSize=0;
+								int outputSize=0;
+								int memorySize=0;
+								int nandSize=0;
+								
+								ComponentPointerStack(ComputerData& computer,int levels)
+								{
+									inputSize=computer.numberOfInputs;
+									outputSize=computer.outputs.size();
+									memorySize=computer.memory.size();
+									nandSize=computer.nandGates.size();
+									
+									stack.reserve((inputSize+outputSize+memorySize+nandSize)*levels);
+									stack.reserveBase(levels);
+								}
+								
+								void pushSlices(PointerSlice& inputSlice,PointerSlice& outputSlice,PointerSlice& memorySlice,PointerSlice& nandSlice)
+								{
+									inputSlice.push(stack,inputSize);
+									outputSlice.push(stack,outputSize);
+									memorySlice.push(stack,memorySize);
+									nandSlice.push(stack,nandSize);
+								}
+								
+								void pushBase()
+								{
+									stack.pushBase();
+								}
+								void popBase()
+								{
+									stack.popBase();
+								}
+							};
+							
+							class ComponentPointers
+							{
+								private:
+									PointerSlice input;
+									PointerSlice output;
+									PointerSlice memory;
+									PointerSlice nand;
+								public:
+								
+								static constexpr bool checkInRange=true;
+								
+								ComponentPointers(ComponentPointerStack& stack)
+								{
+									stack.pushSlices(input,output,memory,nand);
+								}
+								
+								vector<ComputerData::Pointer> getInputs() const
+								{
+									return vector<ComputerData::Pointer>(input);
+								}
+								vector<ComputerData::Pointer> getOutputs() const
+								{
+									vector<ComputerData::Pointer> outputResult=vector<ComputerData::Pointer>(output);
+									for(int i=0;i<outputResult.size();i++)
+									{
+										if(outputResult[i].type!=ComputerData::Pointer::Type::computerOutput)
+										{
+											outputResult[i]=ComputerData::Pointer();
+										}
+									}
+									return outputResult;
+								}
+								vector<ComputerData::Pointer> getMemory() const
+								{
+									return vector<ComputerData::Pointer>(memory);
+								}
+								vector<ComputerData::Pointer> getNandGates() const
+								{
+									return vector<ComputerData::Pointer>(nand);
+								}
+								vector<ComputerData::Pointer> getOutputsRedirectedInPattern() const
+								{
+									vector<ComputerData::Pointer> boundOutput=vector<ComputerData::Pointer>(output);
+									for(int i=0;i<boundOutput.size();i++)
+									{
+										if(boundOutput[i].type==ComputerData::Pointer::Type::computerOutput)
+										{
+											boundOutput[i]=ComputerData::Pointer();
+										}
+									}
+									return boundOutput;
+								}
+								
+								bool isAlreadyFound(const ComputerData::Pointer& pointerInPattern)
+								{
+									ComputerData::Pointer*ptr=getPtr(pointerInPattern);
+									if(ptr==nullptr) return false;
+									return !ptr->isNone();
+								}
+								bool isAlreadyFoundAs(const ComputerData::Pointer& pointerInPattern,const ComputerData::Pointer& pointerInComputer)
+								{
+									if(pointerInComputer.isNone()) return false;
+									ComputerData::Pointer*ptr=getPtr(pointerInPattern);
+									if(ptr==nullptr) return false;
+									return *ptr==pointerInComputer;
+								}
+								
+								bool add(const ComputerData::Pointer& pointerInPattern,const ComputerData::Pointer& pointerInComputer)
+								{
+									ComputerData::Pointer*ptr=getPtr(pointerInPattern);
+									if(ptr==nullptr) return false;
+									if(!ptr->isNone()) return false;
+									*ptr=pointerInComputer;
+									return true;
+								}
+								
+								bool bindToOutput(const ComputerData::Pointer& pointerInPattern,const ComputerData::Pointer& outputPointerInPattern)
+								{
+									if(checkInRange)
+									{
+										if(outputPointerInPattern.type!=ComputerData::Pointer::Type::computerOutput) return false;
+										if(!isInRange(outputPointerInPattern)) return false;
+									}
+									
+									if(!isAlreadyFound(pointerInPattern)) return false;
+									
+									if(!output[outputPointerInPattern.index].isNone()) return false;
+									output[outputPointerInPattern.index]=pointerInPattern;
+									
+									return true;
+								}
+								
+								ComputerData::Pointer getBoundToOutput(const ComputerData::Pointer& outputPointerInPattern)
+								{
+									if(checkInRange)
+									{
+										if(outputPointerInPattern.type!=ComputerData::Pointer::Type::computerOutput)
+										{
+											return ComputerData::Pointer();
+										}
+										
+										if(!isInRange(outputPointerInPattern)) return ComputerData::Pointer();
+									}
+									
+									if(output[outputPointerInPattern.index].type==ComputerData::Pointer::Type::computerOutput)
+									{
+										return ComputerData::Pointer();
+									}
+									return output[outputPointerInPattern.index];
+								}
+								
+								bool foundAll()
+								{
+									return foundAll(input) && foundAll(output) && foundAll(memory) && foundAll(nand);
+								}
+								ComputerData::Pointer translate(const ComputerData::Pointer& pointerInPattern)
+								{
+									ComputerData::Pointer*ptr=getPtr(pointerInPattern);
+									if(ptr==nullptr) return pointerInPattern;
+									return *ptr;
+								}
+								bool contains(const ComputerData::Pointer& pointerInComputer)
+								{
+									if(pointerInComputer.isNone()) return false;
+									if(pointerInComputer.type==ComputerData::Pointer::Type::constant) return false;
+									
+									for(int i=0;i<input.size();i++)
+									{
+										if(input[i]==pointerInComputer) return true;
+									}
+									for(int i=0;i<output.size();i++)
+									{
+										if(output[i]==pointerInComputer) return true;
+									}
+									for(int i=0;i<memory.size();i++)
+									{
+										if(memory[i]==pointerInComputer) return true;
+									}
+									for(int i=0;i<nand.size();i++)
+									{
+										if(nand[i]==pointerInComputer) return true;
+									}
+									
+									return false;
+								}
+								
+								private:
+									PointerSlice*getVectorPtr(const ComputerData::Pointer& pointer)
+									{
+										if(pointer.type==ComputerData::Pointer::Type::computerInput)
+										{
+											return &input;
+										}
+										else if(pointer.type==ComputerData::Pointer::Type::computerOutput)
+										{
+											return &output;
+										}
+										else if(pointer.type==ComputerData::Pointer::Type::computerMemory)
+										{
+											return &memory;
+										}
+										else if(pointer.type==ComputerData::Pointer::Type::nandGate)
+										{
+											return &nand;
+										}
+										else return nullptr;
+									}
+									ComputerData::Pointer*getPtr(const ComputerData::Pointer& pointerInPattern)
+									{
+										PointerSlice*vectorPtr=getVectorPtr(pointerInPattern);
+										if(vectorPtr==nullptr) return nullptr;
+										if(checkInRange)
+										{
+											if(pointerInPattern.index<0 || pointerInPattern.index>=vectorPtr->size())
+											{
+												return nullptr;
+											}
+										}
+										return &(*vectorPtr)[pointerInPattern.index];
+									}
+									bool isInRange(const ComputerData::Pointer& pointer)
+									{
+										if(pointer.type==ComputerData::Pointer::Type::constant) return pointer.index>=0 && pointer.index<=1;
+										
+										PointerSlice*vectorPtr=getVectorPtr(pointer);
+										if(vectorPtr==nullptr) return false;
+										
+										return pointer.index>=0 && pointer.index<vectorPtr->size();
+									}
+									bool foundAll(const PointerSlice& pointers)
+									{
+										for(int i=0;i<pointers.size();i++)
+										{
+											if(pointers[i].isNone()) return false;
+										}
+										return true;
+									}
+								public:
+							};
+							
+							void isSingleConnectedNetwork_recursive(ComputerData& computer,ComputerOutputData& computerOutputData,
+								const ComputerData::Pointer& component,ComponentPointers& pointers)
+							{
+								if(!pointers.add(component,component)) return;
+								
+								vector<ComputerData::Pointer> inputs=component.getInputs(computer);
+								for(int i=0;i<inputs.size();i++)
+								{
+									isSingleConnectedNetwork_recursive(computer,computerOutputData,inputs[i],pointers);
+								}
+								
+								vector<ComputerData::Pointer> outputs=computerOutputData.getOutputs(component);
+								for(int i=0;i<outputs.size();i++)
+								{
+									isSingleConnectedNetwork_recursive(computer,computerOutputData,outputs[i],pointers);
+								}
+							}
+							bool isSingleConnectedNetwork(ComputerData& computer,ComputerOutputData& computerOutputData,const ComputerData::Pointer& mainOutput)
+							{
+								ComponentPointerStack stack(computer,1);
+								ComponentPointers pointers(stack);
+								
+								isSingleConnectedNetwork_recursive(computer,computerOutputData,mainOutput,pointers);
+								
+								return pointers.foundAll();
+							}
+							bool hasDuplicatedOutputOutputs(ComputerOutputData& computerOutputData)
+							{
+								vector<ComputerData::Pointer> pointers=computerOutputData.getAllPointers();
+								for(int i=0;i<pointers.size();i++)
+								{
+									vector<ComputerData::Pointer> outputs=computerOutputData.getOutputs(pointers[i]);
+									for(int j=0;j<outputs.size();j++)
+									{
+										for(int k=0;k<j;k++)
+										{
+											if(outputs[j]==outputs[k])
+											{
+												return true;
+											}
+										}
+									}
+								}
+								return false;
+							}
+							bool hasNonOutputComponentWithNoOutputs(ComputerOutputData& computerOutputData)
+							{
+								vector<ComputerData::Pointer> pointers=computerOutputData.getAllPointers();
+								for(int i=0;i<pointers.size();i++)
+								{
+									vector<ComputerData::Pointer> outputs=computerOutputData.getOutputs(pointers[i]);
+									if(outputs.size()==0) return true;
+								}
+								return false;
+							}
+							
+							vector<ComputerData::Pointer> getOutputs(ComputerOutputData& computerOutputData,const ComputerData::Pointer& component)
+							{
+								return computerOutputData.getOutputs(component);
+							}
+							vector<ComputerData::Pointer>*getOutputsPtr(ComputerOutputData& computerOutputData,const ComputerData::Pointer& component)
+							{
+								return computerOutputData.getOutputsPtr(component);
+							}
+							vector<ComputerData::Pointer> getInputsCanRepeat(ComputerData& computer,const ComputerData::Pointer& component)
+							{
+								vector<ComputerData::Pointer> inputs=component.getInputs(computer);
+								
+								return inputs;
+							}
+							bool addFoundComponent(const ComputerData::Pointer& componentInPattern,const ComputerData::Pointer& componentInComputer,
+								ComponentPointers& pointers)
+							{
+								if(pointers.contains(componentInComputer)) return false;
+								
+								return pointers.add(componentInPattern,componentInComputer);
+							}
+							vector<ComputerData::Pointer> removeFoundPatternComponents(vector<ComputerData::Pointer>& componentsInPattern,ComponentPointers& pointers,
+								const ComputerData::Pointer& excludeInOutput)
+							{
+								vector<ComputerData::Pointer> removed;
+								removed.reserve(componentsInPattern.size());
+								for(int i=0;i<componentsInPattern.size();i++)
+								{
+									if(componentsInPattern[i].type!=ComputerData::Pointer::Type::constant
+										&& pointers.isAlreadyFound(componentsInPattern[i]))
+									{
+										if(componentsInPattern[i]!=excludeInOutput) removed.push_back(componentsInPattern[i]);
+										componentsInPattern.erase(componentsInPattern.begin()+i);
+										i--;
+									}
+								}
+								return removed;
+							}
+							vector<ComputerData::Pointer> removeFoundComputerComponents(vector<ComputerData::Pointer>& componentsInComputer,ComponentPointers& pointers)
+							{
+								vector<ComputerData::Pointer> removed;
+								removed.reserve(componentsInComputer.size());
+								for(int i=0;i<componentsInComputer.size();i++)
+								{
+									if(pointers.contains(componentsInComputer[i]))
+									{
+										removed.push_back(componentsInComputer[i]);
+										componentsInComputer.erase(componentsInComputer.begin()+i);
+										i--;
+									}
+								}
+								return removed;
+							}
+							bool removedFoundComponentsAreTheSame(
+								const vector<ComputerData::Pointer>& componentsInPattern,
+								const vector<ComputerData::Pointer>& componentsInComputer,
+								ComponentPointers& pointers)
+							{
+								if(componentsInPattern.size()!=componentsInComputer.size()) return false;
+								for(int i=0;i<componentsInPattern.size();i++)
+								{
+									bool found=false;
+									for(int j=0;j<componentsInComputer.size();j++)
+									{
+										if(pointers.isAlreadyFoundAs(componentsInPattern[i],componentsInComputer[i]))
+										{
+											found=true;
+											break;
+										}
+									}
+									if(!found) return false;
+								}
+								return true;
+							}
+							bool isComponentAlreadyFoundAndIsItTheSame(const ComputerData::Pointer& componentInPattern,const ComputerData::Pointer& componentInComputer,
+								ComponentPointers& pointers)
+							{
+								return pointers.isAlreadyFoundAs(componentInPattern,componentInComputer);
+							}
+							int factorial(int x,int stop)
+							{
+								try
+								{
+									if(x<=stop) return 1;
+									else return (SafeInteger(x)*SafeInteger(factorial(x-1,stop))).getValue();
+								}
+								catch(const string& str)
+								{
+									throw string()+"Integer overflow in factorial: "+str;
+								}
+							}
+							bool checkTooManyCombinations(int numberOfCombinations,int maxCombinations)
+							{
+								if(numberOfCombinations>maxCombinations)
+								{
+									addToMessageQueue("Too many combinations",
+										string()+"Too many combinations ("+std::to_string(numberOfCombinations)+">"+std::to_string(maxCombinations)+")");
+									return true;
+								}
+								else return false;
+							}
+							vector<vector<int>> getCombinations(int size,int possibleValues,int maxCombinations,bool& tooManyCombinations)
+							{
+								tooManyCombinations=false;
+								if(possibleValues<size || size<0) throw string()+"No combinations possible";
+								
+								if(size==0) return vector<vector<int>>{vector<int>()};
+								else if(size==1)
+								{
+									int numberOfCombinations=possibleValues;
+									if(checkTooManyCombinations(numberOfCombinations,maxCombinations))
+									{
+										tooManyCombinations=true;
+										return vector<vector<int>>();
+									}
+									
+									vector<vector<int>> combinations(1,vector<int>(possibleValues));
+									for(int i=0;i<combinations.size();i++)
+									{
+										combinations[0][i]=i;
+									}
+									return combinations;
+								}
+								else if(size==2)
+								{
+									int numberOfCombinations=possibleValues*(possibleValues-1);
+									if(checkTooManyCombinations(numberOfCombinations,maxCombinations))
+									{
+										tooManyCombinations=true;
+										return vector<vector<int>>();
+									}
+									
+									vector<vector<int>> combinations(2,vector<int>(numberOfCombinations));
+									for(int i=0;i<combinations.size();i++)
+									{
+										int valueA=i/(possibleValues-1);
+										int valueB=i%(possibleValues-1);
+										if(valueB>=valueA) valueB++;
+										combinations[0][i]=valueA;
+										combinations[1][i]=valueB;
+									}
+									return combinations;
+								}
+								else
+								{
+									int numberOfCombinations=0;
+									try
+									{
+										numberOfCombinations=factorial(possibleValues,possibleValues-size);
+									}
+									catch(const string& str)
+									{
+										std::cout<<(string()+"Too many combinations : "+str)<<std::endl;
+										tooManyCombinations=true;
+										return vector<vector<int>>();
+									}
+									if(checkTooManyCombinations(numberOfCombinations,maxCombinations))
+									{
+										tooManyCombinations=true;
+										return vector<vector<int>>();
+									}
+									
+									vector<vector<int>> combinations(size,vector<int>(numberOfCombinations));
+									vector<int> combination(size,0);
+									vector<int> finalCombination(size,0);
+									for(int c=0;c<numberOfCombinations;c++)
+									{
+										if(c>0)
+										{
+											for(int i=size-1;i>=0;i--)
+											{
+												combination[i]++;
+												
+												if(combination[i]>=possibleValues-i)
+												{
+													combination[i]=0;
+												}
+												else break;
+											}
+										}
+										{
+											finalCombination=combination;
+											int lastMinimum=-1;
+											for(int t=0;t<size-1;t++)
+											{
+												int minimum=possibleValues;
+												int minimumIndex=0;
+												for(int i=0;i<size;i++)
+												{
+													int value=finalCombination[i];
+													if(value<minimum && value>lastMinimum)
+													{
+														minimum=value;
+														minimumIndex=i;
+													}
+												}
+												for(int i=minimumIndex+1;i<size;i++)
+												{
+													if(finalCombination[i]>=minimum) finalCombination[i]++;
+												}
+												lastMinimum=minimum;
+											}
+										}
+										for(int i=0;i<size;i++)
+										{
+											combinations[i][c]=finalCombination[i];
+										}
+									}
+									return combinations;
+								}
+							}
+							int divideMaxCombinations(int maxCombinations,int divisor)
+							{
+								if(divisor<=0) throw string()+"Dividing maximum combination number by an integer less than 1";
+								return maxCombinations/divisor+maxCombinations%divisor;
+							}
+							bool matchesWithCombinations(ComputerData& computer,ComputerOutputData& computerOutputData,
+								const vector<ComputerData::Pointer>& computerComponents,
+								const vector<ComputerData::Pointer>& patternComponents,
+								const ComponentPointers& inputPointers,ComponentPointers& outputPointers,int maxCombinations,bool directionToOutput,
+								ComponentPointerStack& stack,bool doCheckThis,bool doCheckInputs,bool doCheckOutputs,bool traverseInputs)
+							{
+								StackFrame stackFrame(stack);
+								
+								outputPointers=inputPointers;
+								
+								bool tooManyCombinations=false;
+								vector<vector<int>> combinations=getCombinations(patternComponents.size(),computerComponents.size(),maxCombinations,tooManyCombinations);
+								if(tooManyCombinations) return false;
+								
+								if(combinations.size()==0) throw string()+"Combination vector is empty";
+								int numberOfCombinations=combinations[0].size();
+								
+								if(debugMode)
+								{
+									std::cout<<debugsc<<"Combinations (choose "<<patternComponents.size()<<" from "<<computerComponents.size()<<")("
+										<<numberOfCombinations<<"):"<<std::endl;
+									for(int j=0;j<numberOfCombinations;j++)
+									{
+										for(int i=0;i<combinations.size();i++)
+										{
+											if(i>0) std::cout<<",";
+											else std::cout<<debugsc;
+											std::cout<<combinations[i][j];
+										}
+										std::cout<<std::endl;
+									}
+									std::cout<<std::endl;
+								}
+								
+								int maxCombinationsPerCombination=divideMaxCombinations(maxCombinations,numberOfCombinations);
+								
+								ComponentPointers outputPointersCombination(stack);
+								ComponentPointers outputPointersCombinationNew(stack);
+								
+								bool combinationFound=false;
+								for(int combination=0;combination<numberOfCombinations;combination++)
+								{
+									outputPointersCombination=outputPointers;
+									
+									bool combinationWorks=true;
+									for(int i=0;i<patternComponents.size();i++)
+									{
+										debugscPut();
+										
+										if(matchesWith(computer,computerOutputData,computerComponents[combinations[i][combination]],
+											patternComponents[i],
+											outputPointersCombination,outputPointersCombinationNew,maxCombinationsPerCombination,directionToOutput,stack,
+											doCheckThis,doCheckInputs,doCheckOutputs,traverseInputs))
+										{
+											debugscRem();
+											if(debugMode) std::cout<<debugsc<<"Matches returned true"<<std::endl;
+											
+											outputPointersCombination=outputPointersCombinationNew;
+										}
+										else
+										{
+											debugscRem();
+											if(debugMode) std::cout<<debugsc<<"Matches returned false"<<std::endl;
+											
+											combinationWorks=false;
+											break;
+										}
+									}
+									if(combinationWorks)
+									{
+										outputPointers=outputPointersCombination;
+										combinationFound=true;
+										break;
+									}
+								}
+								return combinationFound;
+							}
+							bool checkInputs(ComputerData& computer,ComputerOutputData& computerOutputData,const ComputerData::Pointer& componentInComputer,
+								const ComputerData::Pointer& componentInPattern,
+								const ComponentPointers& inputPointers,ComponentPointers& outputPointers,int maxCombinations,bool directionToOutput,
+								ComponentPointerStack& stack,bool doCheckThis,bool doCheckInputs,bool doCheckOutputs,bool traverseInputs)
+							{
+								StackFrame stackFrame(stack);
+								
+								outputPointers=inputPointers;
+								
+								ComponentPointers outputPointersNew(stack);
+								
+								if(debugMode) std::cout<<debugsc<<"Check inputs:"<<std::endl;
+								
+								if(!(componentInPattern.type==ComputerData::Pointer::Type::computerMemory && !directionToOutput)
+									&& componentInPattern.type!=ComputerData::Pointer::Type::computerInput)
+								{
+									vector<ComputerData::Pointer> patternInputs=getInputsCanRepeat(pattern,componentInPattern);
+									int patternInputCount=patternInputs.size();
+									vector<ComputerData::Pointer> patternInputsRemoved=
+										removeFoundPatternComponents(patternInputs,outputPointers,ComputerData::Pointer());
+									
+									vector<ComputerData::Pointer> computerInputs=getInputsCanRepeat(computer,componentInComputer);
+									int computerInputCount=computerInputs.size();
+									vector<ComputerData::Pointer> computerInputsRemoved=removeFoundComputerComponents(computerInputs,outputPointers);
+									
+									if(computerInputCount!=patternInputCount) return false;
+									
+									if(!removedFoundComponentsAreTheSame(patternInputsRemoved,computerInputsRemoved,outputPointers))
+									{
+										return false;
+									}
+									
+									if(patternInputs.size()>0)
+									{
+										if(computerInputs.size()>0)
+										{
+											if(computerInputs.size()<patternInputs.size()) return false;
+											
+											if(matchesWithCombinations(computer,computerOutputData,
+												computerInputs,
+												patternInputs,
+												outputPointers,outputPointersNew,maxCombinations,false,stack,
+												doCheckThis,doCheckInputs,doCheckOutputs,traverseInputs))
+											{
+												outputPointers=outputPointersNew;
+											}
+											else
+											{
+												return false;
+											}
+										}
+										else return false;
+									}
+								}
+								
+								return true;
+							}
+							bool checkOutputs(ComputerData& computer,ComputerOutputData& computerOutputData,const ComputerData::Pointer& componentInComputer,
+								const ComputerData::Pointer& componentInPattern,
+								const ComponentPointers& inputPointers,ComponentPointers& outputPointers,int maxCombinations,bool directionToOutput,
+								const ComputerData::Pointer& outputOfComponentActingAsOutput,
+								ComponentPointerStack& stack,bool doCheckThis,bool doCheckInputs,bool doCheckOutputs,bool traverseInputs)
+							{
+								StackFrame stackFrame(stack);
+								
+								outputPointers=inputPointers;
+								
+								ComponentPointers outputPointersNew(stack);
+								
+								if(debugMode) std::cout<<debugsc<<"Check outputs:"<<std::endl;
+								
+								if(!(componentInPattern.type==ComputerData::Pointer::Type::computerMemory && directionToOutput)
+									&& componentInPattern.type!=ComputerData::Pointer::Type::computerOutput
+									&& componentInComputer.type!=ComputerData::Pointer::Type::constant)
+								{
+									bool dontCareForExtraOutputsInComputer=
+										!outputOfComponentActingAsOutput.isNone() || componentInPattern.type==ComputerData::Pointer::Type::computerInput;
+									
+									vector<ComputerData::Pointer> patternOutputs=getOutputs(patternOutputData,componentInPattern);
+									int patternOutputCount=patternOutputs.size();
+									vector<ComputerData::Pointer> patternOutputsRemoved=
+										removeFoundPatternComponents(patternOutputs,outputPointers,outputOfComponentActingAsOutput);
+									
+									vector<ComputerData::Pointer> computerOutputs=getOutputs(computerOutputData,componentInComputer);
+									int computerOutputCount=computerOutputs.size();
+									vector<ComputerData::Pointer> computerOutputsRemoved=removeFoundComputerComponents(computerOutputs,outputPointers);
+									
+									if(dontCareForExtraOutputsInComputer){}
+									else
+									{
+										if(computerOutputCount!=patternOutputCount) return false;
+									}
+									
+									if(!removedFoundComponentsAreTheSame(patternOutputsRemoved,computerOutputsRemoved,outputPointers))
+									{
+										return false;
+									}
+									
+									if(patternOutputs.size()>0)
+									{
+										if(computerOutputs.size()>0)
+										{
+											if(computerOutputs.size()<patternOutputs.size()) return false;
+											
+											if(matchesWithCombinations(computer,computerOutputData,
+												computerOutputs,
+												patternOutputs,
+												outputPointers,outputPointersNew,maxCombinations,true,stack,
+												doCheckThis,doCheckInputs,doCheckOutputs,traverseInputs))
+											{
+												outputPointers=outputPointersNew;
+											}
+											else
+											{
+												return false;
+											}
+										}
+										else return false;
+									}
+								}
+								
+								return true;
+							}
+							bool matchesWith(ComputerData& computer,ComputerOutputData& computerOutputData,const ComputerData::Pointer& componentInComputer,
+								const ComputerData::Pointer& componentInPattern,
+								const ComponentPointers& inputPointers,ComponentPointers& outputPointers,int maxCombinations,bool directionToOutput,
+								ComponentPointerStack& stack,bool doCheckThis,bool doCheckInputs,bool doCheckOutputs,bool traverseInputs)
+							{
+								StackFrame stackFrame(stack);
+								
+								outputPointers=inputPointers;
+								
+								matchesWith_count++;
+								
+								if(doCheckThis)
+								{
+									if(debugMode) std::cout<<debugsc<<"Check component "<<(directionToOutput?"out":"in")<<" "<<componentInPattern.toString()<<" in pattern. "
+										<<componentInComputer.toString()<<" in computer"<<std::endl;
+									
+									if(componentInPattern.type==ComputerData::Pointer::Type::constant)
+									{
+										return componentInComputer==componentInPattern;
+									}
+									else if(componentInPattern.type==ComputerData::Pointer::Type::computerInput)
+									{
+										if(componentInComputer.type==ComputerData::Pointer::Type::computerOutput) return false;
+										if(componentInComputer.type==ComputerData::Pointer::Type::constant)
+										{
+											if(computerOutputData.getOutputsPtr(componentInPattern)->size()!=1) return false;
+										}
+									}
+									else if(componentInComputer.type!=componentInPattern.type) return false;
+									
+									if(isComponentAlreadyFoundAndIsItTheSame(componentInPattern,componentInComputer,outputPointers))
+									{
+										return true;
+									}
+									if(!addFoundComponent(componentInPattern,componentInComputer,outputPointers))
+									{
+										return false;
+									}
+								}
+								
+								ComponentPointers outputPointersNew(stack);
+								
+								if(doCheckInputs)
+								{
+									if(checkInputs(computer,computerOutputData,componentInComputer,componentInPattern,
+										outputPointers,outputPointersNew,maxCombinations,directionToOutput,
+										stack,true,true,false,false))
+									{
+										outputPointers=outputPointersNew;
+									}
+									else return false;
+								}
+								
+								if(traverseInputs && !(componentInPattern.type==ComputerData::Pointer::Type::computerMemory && !directionToOutput))
+								{
+									if(debugMode) std::cout<<debugsc<<"Traverse inputs"<<std::endl;
+									
+									vector<ComputerData::Pointer> inputs=componentInPattern.getInputs(pattern);
+									for(int i=0;i<inputs.size();i++)
+									{
+										ComputerData::Pointer inputInComputer=outputPointers.translate(inputs[i]);
+										if(inputInComputer.isNone())
+										{
+											throw string()+"At traverse inputs: input in computer is not found";
+										}
+										
+										debugscPut();
+										
+										if(matchesWith(computer,computerOutputData,inputInComputer,
+											inputs[i],
+											outputPointers,outputPointersNew,maxCombinations,false,
+											stack,false,false,true,true))
+										{
+											debugscRem();
+											
+											outputPointers=outputPointersNew;
+										}
+										else
+										{
+											debugscRem();
+											
+											return false;
+										}
+									}
+								}
+								
+								if(doCheckOutputs)
+								{
+									ComputerData::Pointer availablePatternOutput;
+									if(componentInPattern.type==ComputerData::Pointer::Type::nandGate
+										|| componentInPattern.type==ComputerData::Pointer::Type::computerMemory)
+									{
+										vector<ComputerData::Pointer>*patternOutputsPtr=getOutputsPtr(patternOutputData,componentInPattern);
+										if(patternOutputsPtr!=nullptr)
+										{
+											for(int i=0;i<patternOutputsPtr->size();i++)
+											{
+												ComputerData::Pointer& patternOutput=(*patternOutputsPtr)[i];
+												if(patternOutput.type==ComputerData::Pointer::Type::computerOutput)
+												{
+													if(!outputPointers.isAlreadyFound(patternOutput))
+													{
+														availablePatternOutput=patternOutput;
+														break;
+													}
+												}
+											}
+											
+											if(!availablePatternOutput.isNone())
+											{
+												if(!outputPointers.bindToOutput(componentInPattern,availablePatternOutput)) return false;
+											}
+										}
+									}
+									
+									if(checkOutputs(computer,computerOutputData,componentInComputer,componentInPattern,
+										outputPointers,outputPointersNew,maxCombinations,directionToOutput,availablePatternOutput,
+										stack,true,true,true,true))
+									{
+										outputPointers=outputPointersNew;
+									}
+									else return false;
+								}
+								
+								return true;
+							}
+							ComputerData::Pointer chooseMainOutput(ComputerData& computer,ComputerOutputData& computerOutputData)
+							{
+								if(computer.nandGates.size()>0)
+								{
+									return ComputerData::Pointer(ComputerData::Pointer::Type::nandGate,computer.nandGates.size()-1);
+								}
+								else if(computer.memory.size()>0)
+								{
+									return ComputerData::Pointer(ComputerData::Pointer::Type::computerMemory,computer.memory.size()-1);
+								}
+								else
+								{
+									return ComputerData::Pointer(ComputerData::Pointer::Type::computerOutput,computer.outputs.size()-1);
+								}
+							}
+							MessageQueue*messageQueuePtr=nullptr;
+							void addToMessageQueue(const string& messageType,const string& message)
+							{
+								if(messageQueuePtr!=nullptr)
+								{
+									messageQueuePtr->add(messageType,message);
+								}
+							}
+							void setMessageQueue(MessageQueue& messageQueue)
+							{
+								messageQueuePtr=&messageQueue;
+							}
+							static constexpr bool debugMode=false;
+							string debugsc;
+							inline void debugscPut()
+							{
+								if(debugMode)
+								{
+									if(debugsc.size()<32) debugsc+=" ";
+								}
+							}
+							inline void debugscRem()
+							{
+								if(debugMode)
+								{
+									if(debugsc.size()>0) debugsc.resize(debugsc.size()-1);
+								}
+							}
+						public:
+						
+						uint64_t matchesWith_count=0;
+						
+						private:
+							bool matches(ComputerData& computer,ComputerOutputData& computerOutputData,const ComputerData::Pointer& mainOutputComponent,
+								ComponentPointers& outputPointers,int maxCombinations,ComponentPointerStack& stack)
+							{
+								StackFrame stackFrame(stack);
+								
+								ComponentPointers inputPointers(stack);
+								
+								if(debugMode) std::cout<<debugsc<<"\nmainOutputComponent: "<<mainOutputComponent.toString()<<"\n"<<std::endl;
+								debugscPut();
+								
+								if(matchesWith(computer,computerOutputData,
+									mainOutputComponent,patternMainOutput,inputPointers,outputPointers,maxCombinations,
+									true,stack,true,true,true,true
+									))
+								{
+									debugscRem();
+									if(debugMode) std::cout<<debugsc<<"Matches returned true"<<std::endl;
+									if(!outputPointers.foundAll())
+									{
+										throw string()+"The pattern is not a single connected network";
+									}
+									return true;
+								}
+								else
+								{
+									debugscRem();
+									if(debugMode) std::cout<<debugsc<<"Matches returned false"<<std::endl;
+									return false;
+								}
+							}
+							void applyConnectionChange(ComputerData& computer,ComputerOutputData& computerOutputData,const ConnectionChange& change)
+							{
+								vector<ComputerData::Input*> inputPtrs=change.outputComponent.getInputPtrs(computer);
+								if(change.outputComponentInputIndex<0 || change.outputComponentInputIndex>=inputPtrs.size())
+								{
+									throw string()+"Trying to apply connection change with output component input index out of range";
+								}
+								*inputPtrs[change.outputComponentInputIndex]=ComputerData::Input(change.newInputComponent);
+								
+								computerOutputData.change(change);
+							}
+							void addConnectionChangesToSubstituteInputsToResult(ComputerData& computer,ComponentPointers& pointers,
+								const ComputerData::Pointer& pointerInPattern,
+								const ComputerData::Pointer& pointerInComputer,
+								vector<ConnectionChange>& connectionChanges)
+							{
+								vector<ComputerData::Pointer> inputs=pointerInComputer.getInputs(computer);
+								vector<ComputerData::Pointer> inputPointersInResultingPattern=pointerInPattern.getInputs(resultingPattern);
+								if(inputs.size()!=inputPointersInResultingPattern.size()) throw string()+"Input counts do not match";
+								for(int i=0;i<inputs.size();i++)
+								{
+									connectionChanges.emplace_back(
+										inputs[i],pointers.translate(inputPointersInResultingPattern[i]),
+										i,pointerInComputer
+										);
+								}
+							}
+							void execute(ComputerData& computer,ComputerOutputData& computerOutputData,ComponentPointers& pointers,vector<int>& optimizedOutNandGates)
+							{
+								vector<ConnectionChange> connectionChanges;
+								
+								vector<int> changesSteps;
+								
+								vector<ComputerData::Pointer> outputPointersPatternToComputer=pointers.getOutputs();
+								vector<ComputerData::Pointer> memoryPointersPatternToComputer=pointers.getMemory();
+								vector<ComputerData::Pointer> nandGatePointersPatternToComputer=pointers.getNandGates();
+								
+								vector<ComputerData::Pointer> outputsRedirectedInPattern=pointers.getOutputsRedirectedInPattern();
+								
+								for(int i=0;i<outputPointersPatternToComputer.size();i++)
+								{
+									ComputerData::Pointer pointerInPattern(ComputerData::Pointer::Type::computerOutput,i);
+									ComputerData::Pointer pointerInComputer=outputPointersPatternToComputer[i];
+									
+									if(pointerInComputer.isNone()) continue;
+									
+									addConnectionChangesToSubstituteInputsToResult(computer,pointers,pointerInPattern,pointerInComputer,connectionChanges);
+								}
+								
+								if(debugMode) changesSteps.push_back(connectionChanges.size());
+								
+								for(int i=0;i<memoryPointersPatternToComputer.size();i++)
+								{
+									ComputerData::Pointer pointerInPattern(ComputerData::Pointer::Type::computerMemory,i);
+									ComputerData::Pointer pointerInComputer=memoryPointersPatternToComputer[i];
+									
+									addConnectionChangesToSubstituteInputsToResult(computer,pointers,pointerInPattern,pointerInComputer,connectionChanges);
+								}
+								
+								if(debugMode) changesSteps.push_back(connectionChanges.size());
+								
+								for(int i=0;i<nandGatePointersPatternToComputer.size();i++)
+								{
+									ComputerData::Pointer pointerInPattern(ComputerData::Pointer::Type::nandGate,i);
+									ComputerData::Pointer pointerInComputer=nandGatePointersPatternToComputer[i];
+									
+									if(i<resultingPattern.nandGates.size())
+									{
+										addConnectionChangesToSubstituteInputsToResult(computer,pointers,pointerInPattern,pointerInComputer,connectionChanges);
+									}
+									else
+									{
+										optimizedOutNandGates[pointerInComputer.index]=true;
+										
+										vector<ComputerData::Pointer> inputs=pointerInComputer.getInputs(computer);
+										for(int j=0;j<inputs.size();j++)
+										{
+											connectionChanges.emplace_back(
+												inputs[j],ComputerData::Pointer(ComputerData::Pointer::Type::constant,0),
+												j,pointerInComputer
+												);
+										}
+									}
+								}
+								
+								if(debugMode) changesSteps.push_back(connectionChanges.size());
+								
+								for(int i=0;i<outputsRedirectedInPattern.size();i++)
+								{
+									ComputerData::Pointer outputPointerInPattern(ComputerData::Pointer::Type::computerOutput,i);
+									
+									ComputerData::Pointer pointerInPattern=outputsRedirectedInPattern[i];
+									if(pointerInPattern.isNone()) continue;
+									
+									ComputerData::Pointer pointerInComputer=pointers.translate(pointerInPattern);
+									
+									vector<ComputerData::Pointer> outputs=computerOutputData.getOutputs(pointerInComputer);
+									
+									ComputerData::Pointer outputInputPointerInPattern=outputPointerInPattern.getInputs(resultingPattern)[0];
+									
+									ComputerData::Pointer pointerInComputerRedirected=pointers.translate(outputInputPointerInPattern);
+									
+									for(int o=0;o<outputs.size();o++)
+									{
+										vector<ComputerData::Pointer> inputs=outputs[o].getInputs(computer);
+										
+										for(int j=0;j<inputs.size();j++)
+										{
+											if(inputs[j]==pointerInComputer)
+											{
+												connectionChanges.emplace_back(
+													inputs[j],pointerInComputerRedirected,
+													j,outputs[o]
+													);
+											}
+										}
+									}
+								}
+								
+								if(debugMode)
+								{
+									std::cout<<"\n\n\n"<<std::endl;
+									for(int i=0;i<connectionChanges.size();i++)
+									{
+										for(int j=0;j<changesSteps.size();j++)
+										{
+											if(changesSteps[j]==i)
+											{
+												std::cout<<std::endl;
+											}
+										}
+										
+										std::cout<<"    "<<connectionChanges[i].outputComponent.toString()
+											<<"["<<connectionChanges[i].outputComponentInputIndex<<"] : "<<connectionChanges[i].oldInputComponent.toString()<<"->"
+											<<connectionChanges[i].newInputComponent.toString()<<std::endl;
+									}
+								}
+								
+								for(int i=0;i<connectionChanges.size();i++)
+								{
+									applyConnectionChange(computer,computerOutputData,connectionChanges[i]);
+								}
+							}
+						public:
+						
+						bool executeIfItMatches(ComputerData& computer,ComputerOutputData& computerOutputData,const ComputerData::Pointer& mainOutputComponent,
+							vector<int>& optimizedOutNandGates,int maxCombinations,MessageQueue& messageQueue)
+						{
+							if(mainOutputComponent.type==ComputerData::Pointer::Type::nandGate && optimizedOutNandGates[mainOutputComponent.index])
+							{
+								return false;
+							}
+							
+							setMessageQueue(messageQueue);
+							
+							size_t stackSize=8*(pattern.numberOfInputs+pattern.outputs.size()+pattern.memory.size()+pattern.nandGates.size());
+							ComponentPointerStack stack(pattern,stackSize);
+							ComponentPointers pointers(stack);
+							if(matches(computer,computerOutputData,mainOutputComponent,pointers,maxCombinations,stack))
+							{
+								execute(computer,computerOutputData,pointers,optimizedOutNandGates);
+								return true;
+							}
+							else return false;
+						}
+						bool optimizesMemory()
+						{
+							return pattern.memory.size()>0;
+						}
+					};
+					
+					vector<Rule> rules;
+					
+					void addRule(const string& name,const ComputerData& pattern,const ComputerData& resultingPattern)
+					{
+						if(findWithName(rules,name)!=-1)
+						{
+							throw string()+"Rule with name '"+name+"' already defined";
+						}
+						rules.emplace_back(name,pattern,resultingPattern);
+					}
+					
+					static constexpr string ruleNamePrefix="RULE_";
+					static constexpr string ruleResultNamePrefix="RULEO_";
+					
+					void addRules(const string& ruleCode)
+					{
+						try
+						{
+							Code code(ruleCode);
+							code.compileToComponents();
+							
+							for(int i=0;i<code.components.size();i++)
+							{
+								string name=code.components[i].name;
+								if(name.size()>ruleNamePrefix.size() && name.substr(0,ruleNamePrefix.size())==ruleNamePrefix)
+								{
+									string justTheName=name.substr(ruleNamePrefix.size(),name.size()-ruleNamePrefix.size());
+									string ruleOutputName=ruleResultNamePrefix+justTheName;
+									
+									try
+									{
+										ComputerData pattern;
+										code.compileComponents(pattern,name);
+										
+										ComputerData resultingPattern;
+										code.compileComponents(resultingPattern,ruleOutputName);
+										
+										addRule(justTheName,pattern,resultingPattern);
+									}
+									catch(const string& str)
+									{
+										throw string()+"at rule '"+justTheName+"' ("+name+"): "+str;
+									}
+								}
+							}
+						}
+						catch(const string& str)
+						{
+							throw string()+"Error in optimization rule code: "+str;
+						}
+					}
+				public:
 				
-				reorderNandGates(computer);
+				Optimizer(const string& optimizationRulesCodeText=string())
+				{
+					if(optimizationRulesCodeText.size()>0)
+					{
+						addRules(optimizationRulesCodeText);
+					}
+				}
+				void optimize(ComputerData& computer,const OptimizationOptions& options)
+				{
+					if(!options.optimizeGates && !options.optimizeMemory) return;
+					
+					TimeCounter optimizationTimeCounter;
+					optimizationTimeCounter.start();
+					
+					if(options.optimizeGates)
+					{
+						int prunedCount=pruneUnusedNandGates(computer);
+						std::cout<<"Gates removed: "<<prunedCount<<std::endl;
+					}
+					if(options.optimizeMemory)
+					{
+						int prunedCount=pruneUnusedMemory(computer);
+						std::cout<<"Memory removed: "<<prunedCount<<std::endl;
+					}
+					
+					MessageQueue messageQueue("At optimization (delayed message): ",100);
+					
+					ComputerOutputData computerOutputData;
+					
+					if(options.optimizeGates && rules.size()>0 || options.optimizeMemory)
+					{
+						for(int passIndex=0;passIndex<options.passes || options.passes==-1;passIndex++)
+						{
+							std::cout<<"\n"<<"Optimization pass "<<(passIndex+1)<<std::endl;
+							
+							int changeCount=0;
+							
+							computerOutputData.update(computer);
+							
+							TimeCounter showProgressTimeCounter;
+							showProgressTimeCounter.start();
+							
+							vector<ComputerData::Pointer> pointers;
+							
+							for(int i=0;i<computer.nandGates.size();i++)
+							{
+								pointers.emplace_back(ComputerData::Pointer::Type::nandGate,i);
+							}
+							for(int i=0;i<computer.memory.size();i++)
+							{
+								pointers.emplace_back(ComputerData::Pointer::Type::computerMemory,i);
+							}
+							for(int i=0;i<computer.outputs.size();i++)
+							{
+								pointers.emplace_back(ComputerData::Pointer::Type::computerOutput,i);
+							}
+							
+							messageQueue.setMessagesPerFlush(pointers.size()/10+10);
+							
+							if(options.optimizeGates && rules.size()>0)
+							{
+								vector<int> optimizedOutNandGates(computer.nandGates.size(),false);
+								int optimizationCount=0;
+								vector<int> ruleOptimizationCounts(rules.size(),0);
+								for(int i=0;i<pointers.size();i++)
+								{
+									if(options.maxTime!=-1 && optimizationTimeCounter.end()>=options.maxTime)
+									{
+										std::cout<<"Stopping ("<<optimizationTimeCounter.end()<<" s >= "<<options.maxTime<<" s"<<")"<<std::endl;
+										break;
+									}
+									
+									if(i%(pointers.size()/10+1)==0 || showProgressTimeCounter.end()>=10)
+									{
+										std::cout<<pointers[i].toString()<<" ("<<(i*100/pointers.size())<<"%)"<<std::endl;
+										showProgressTimeCounter.start();
+									}
+									
+									for(int j=0;j<rules.size();j++)
+									{
+										if(options.maxTime!=-1 && optimizationTimeCounter.end()>=options.maxTime) break;
+										
+										if(!options.optimizeMemory && rules[j].optimizesMemory()) continue;
+										
+										if(rules[j].executeIfItMatches(computer,computerOutputData,pointers[i],
+											optimizedOutNandGates,options.maxCombinations,messageQueue))
+										{
+											ruleOptimizationCounts[j]++;
+											optimizationCount++;
+											break;
+										}
+									}
+								}
+								changeCount+=optimizationCount;
+								
+								messageQueue.flush();
+								
+								if(options.verbose)
+								{
+									std::cout<<"\n";
+									for(int j=0;j<rules.size();j++)
+									{
+										if(!options.optimizeMemory && rules[j].optimizesMemory()) continue;
+										
+										std::cout<<"Rule '"<<rules[j].name<<"' optimizations: "<<ruleOptimizationCounts[j]<<"\n";
+									}
+									std::cout<<"\n";
+									for(int j=0;j<rules.size();j++)
+									{
+										if(!options.optimizeMemory && rules[j].optimizesMemory()) continue;
+										
+										std::cout<<"Rule '"<<rules[j].name<<"' total node match tests: "<<rules[j].matchesWith_count<<"\n";
+									}
+									std::cout<<std::endl;
+								}
+								
+								std::cout<<"Optimizations done: "<<optimizationCount<<std::endl;
+							}
+							
+							if(options.optimizeGates)
+							{
+								int prunedCount=pruneUnusedNandGates(computer);
+								std::cout<<"Gates removed: "<<prunedCount<<std::endl;
+								changeCount+=prunedCount;
+							}
+							if(options.optimizeMemory)
+							{
+								int prunedCount=pruneUnusedMemory(computer);
+								std::cout<<"Memory removed: "<<prunedCount<<std::endl;
+								changeCount+=prunedCount;
+							}
+							
+							std::cout<<"Total elapsed time: "<<optimizationTimeCounter.end()<<" s"<<std::endl;
+							
+							if(changeCount==0) break;
+							if(options.maxTime!=-1 && optimizationTimeCounter.end()>=options.maxTime) break;
+						}
+					}
+				}
+			};
+			
+			void optimize(Optimizer& optimizer,ComputerData& computer,const OptimizationOptions& optimizationOptions)
+			{
+				try
+				{
+					optimizer.optimize(computer,optimizationOptions);
+					
+					reorderNandGatesInValidOrder(computer);
+				}
+				catch(const string& str)
+				{
+					throw string()+"Internal error during optimization: "+str;
+				}
+			}
+			void compileToComponents()
+			{
+				processTemplates();
+				
+				readComponents();
+				
+				processComponents();
+				
+				checkRecursivity();
 			}
 		public:
-		Computer compile()
+		ComputerData compileToComputerData()
 		{
-			processTemplates();
-			
-			readComponents();
-			
-			processComponents();
-			
-			checkRecursivity();
+			compileToComponents();
 			
 			ComputerData computer;
 			compileComponents(computer);
+			
+			return computer;
+		}
+		Computer compile(const OptimizationOptions& optimizationOptions,const string& optimizationRulesCodeText)
+		{
+			ComputerData computer=compileToComputerData();
+			
+			Optimizer optimizer(optimizationRulesCodeText);
+			optimize(optimizer,computer,optimizationOptions);
 			
 			return computer.getComputer();
 		}
 	};
 	
-	Computer buildComputer(const string& codeText)
+	Computer buildComputer(const string& codeText,const OptimizationOptions& optimizationOptions,const string& optimizationRulesCodeText)
 	{
 		Code code(codeText);
-		Computer computer=code.compile();
+		Computer computer=code.compile(optimizationOptions,optimizationRulesCodeText);
 		
 		string trace;
 		if(!computer.checkValidity(trace))

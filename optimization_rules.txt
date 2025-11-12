@@ -1,0 +1,128 @@
+not:
+o: out
+i: in
+o=nand i i
+
+
+
+RULE_nand_11:
+o: out
+o=nand 1 1
+
+RULEO_nand_11:
+o: out
+o=set 0
+
+
+
+RULE_nand_0i:
+o: out
+i: in
+o=nand 0 i
+
+RULEO_nand_0i:
+o: out
+i: in
+o=set 1
+
+
+
+RULE_nand_1i:
+o: out
+i: in
+o=nand 1 i
+
+RULEO_nand_1i:
+o: out
+i: in
+o=nand i i
+
+
+
+RULE_not_not:
+o: out
+i: in
+a=not i
+o=not a
+
+RULEO_not_not:
+o: out
+i: in
+o=set i
+
+
+
+RULE_memory_loop:
+o: out
+m: reg
+m=set m
+o=set m
+
+RULEO_memory_loop:
+o: out
+m: reg
+m=set 0
+o=set 0
+
+
+
+RULE_notx2:
+oa: out
+ob: out
+i: in
+oa=not i
+ob=not i
+
+RULEO_notx2:
+oa: out
+ob: out
+i: in
+a=not i
+oa=set a
+ob=set a
+
+
+
+RULE_nandx2:
+oa: out
+ob: out
+ia: in
+ib: in
+oa=nand ia ib
+ob=nand ia ib
+
+RULEO_nandx2:
+oa: out
+ob: out
+ia: in
+ib: in
+a=nand ia ib
+oa=set a
+ob=set a
+
+
+
+RULE_xor:
+o: out
+o_a: out
+ia: in
+ib: in
+a=nand ia ib
+ia_not=not ia
+ib_not=not ib
+b=nand ia_not ib_not
+c=nand a b
+o=not c
+o_a=set a
+
+RULEO_xor:
+o: out
+o_a: out
+ia: in
+ib: in
+a=nand ia ib
+b=nand a ia
+c=nand a ib
+o=nand b c
+o_a=set a
+
