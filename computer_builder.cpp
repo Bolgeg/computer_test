@@ -6761,6 +6761,10 @@ class ComputerBuilder
 					if(index<numberOfInputs) return ComputerData::Pointer(ComputerData::Pointer::Type::input,index);
 					else return ComputerData::Pointer(ComputerData::Pointer::Type::nandGate,index-numberOfInputs);
 				}
+				inline uint32_t getInputPairValue(int a,int b)
+				{
+					return ((uint32_t(a)&0xff)<<8)|(uint32_t(b)&0xff);
+				}
 				int getEqualOrGreaterValidInputB(int gate,int inputA,int inputB)
 				{
 					int i=inputA;
@@ -6779,6 +6783,13 @@ class ComputerBuilder
 						if(i==j && i>=numberOfInputs)
 						{
 							if(circuit[0][i-numberOfInputs]==circuit[1][i-numberOfInputs]) continue;
+						}
+						if(gate>0 && j!=numberOfInputs+gate-1)
+						{
+							if(getInputPairValue(circuit[0][gate-1],circuit[1][gate-1])>getInputPairValue(i,j))
+							{
+								continue;
+							}
 						}
 						return j;
 					}
