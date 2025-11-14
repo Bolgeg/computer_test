@@ -163,7 +163,8 @@ string bitsPerSecondToString(float bps)
 #include "computer.cpp"
 #include "computer_builder.cpp"
 
-void drawComputerState(graphics::Image& screen,const Computer::State& computerState,const Pos& position,const Pos& size,int widthInPixels,int memoryOffset=0)
+template <class T>
+void drawComputerState(graphics::Image& screen,const Computer::State<T>& computerState,const Pos& position,const Pos& size,int widthInPixels,int memoryOffset=0)
 {
 	int pixelSize=size.x/widthInPixels;
 	
@@ -171,7 +172,7 @@ void drawComputerState(graphics::Image& screen,const Computer::State& computerSt
 	for(int i=0;i<(size.x/pixelSize)*(size.y/pixelSize) && i<computerState.memory.size();i++)
 	{
 		Pos p=position+Pos(i%(size.x/pixelSize),i/(size.x/pixelSize))*pixelSize;
-		int bit=computerState.memory[memoryOffset+i]&1;
+		int bit=computerState.getBitValue(computerState.memory[memoryOffset+i],0);
 		
 		int color= bit ? 0xffffff : 0;
 		
@@ -231,370 +232,482 @@ int main(int argc,char*argv[])
 		string command=args[0];
 		args.erase(args.begin());
 		
-		if(command!="simulate")
+		if(command=="optsearch")
 		{
-			throw string()+"Command '"+command+"' not recognized";
-		}
-		
-		string computerDescriptionCodePath;
-		ComputerBuilder::OptimizationOptions optimizationOptions;
-		string optimizationRulesCodePath;
-		
-		for(int i=0;i<args.size();i++)
-		{
-			string arg=args[i];
-			if(arg.size()>0)
+			string inputPath;
+			ComputerBuilder::OptimizationSearchOptions options;
+			string outputPath;
+			
+			
+			for(int i=0;i<args.size();i++)
 			{
-				if(arg[0]=='-')
+				string arg=args[i];
+				if(arg.size()>0)
 				{
-					if(arg.size()==1)
+					if(arg[0]=='-')
 					{
-						throw string()+"Expected option after the '-' character";
-					}
-					
-					string argfull=arg;
-					
-					if(arg=="-Og")
-					{
-						optimizationOptions.optimizeGates=true;
-					}
-					else if(arg=="-Om")
-					{
-						optimizationOptions.optimizeMemory=true;
-					}
-					else if(arg=="-Ov")
-					{
-						optimizationOptions.verbose=true;
-					}
-					else if(removeStringStart(arg,"-Op="))
-					{
-						try
+						if(arg.size()==1)
 						{
-							optimizationOptions.passes=std::stoi(arg);
-							if(optimizationOptions.passes<-1) throw 1;
+							throw string()+"Expected option after the '-' character";
 						}
-						catch(...)
+						
+						string argfull=arg;
+						
+						if(arg=="-s")
 						{
-							throw string()+"Invalid value for option: '"+argfull+"'";
+							options.silent=true;
 						}
-					}
-					else if(removeStringStart(arg,"-Oc="))
-					{
-						try
+						else if(removeStringStart(arg,"-alg="))
 						{
-							optimizationOptions.maxCombinations=std::stoi(arg);
-							if(optimizationOptions.maxCombinations<1) throw 1;
+							options.algorithm=arg;
 						}
-						catch(...)
+						else if(removeStringStart(arg,"-maxg="))
 						{
-							throw string()+"Invalid value for option: '"+argfull+"'";
+							try
+							{
+								options.maxGates=std::stoi(arg);
+							}
+							catch(...)
+							{
+								throw string()+"Invalid value for option: '"+argfull+"'";
+							}
 						}
-					}
-					else if(removeStringStart(arg,"-Ot="))
-					{
-						try
+						else if(removeStringStart(arg,"-maxt="))
 						{
-							optimizationOptions.maxTime=std::stod(arg);
-							if(optimizationOptions.maxTime<0 && optimizationOptions.maxTime!=-1) throw 1;
+							try
+							{
+								options.maxTime=std::stod(arg);
+								if(options.maxTime<0 && options.maxTime!=-1) throw 1;
+							}
+							catch(...)
+							{
+								throw string()+"Invalid value for option: '"+argfull+"'";
+							}
 						}
-						catch(...)
+						else if(removeStringStart(arg,"-o="))
 						{
-							throw string()+"Invalid value for option: '"+argfull+"'";
+							if(arg.size()==0)
+							{
+								throw string()+"Invalid value for option: '"+argfull+"'";
+							}
+							outputPath=arg;
 						}
-					}
-					else if(removeStringStart(arg,"-Of="))
-					{
-						if(arg.size()==0)
+						else
 						{
-							throw string()+"Invalid value for option: '"+argfull+"'";
+							throw string()+"'"+arg+"' option not recognized";
 						}
-						optimizationRulesCodePath=arg;
 					}
 					else
 					{
-						throw string()+"'"+arg+"' option not recognized";
+						inputPath=arg;
 					}
 				}
-				else
-				{
-					computerDescriptionCodePath=arg;
-				}
 			}
-		}
-		if(computerDescriptionCodePath.size()==0)
-		{
-			throw string()+"Input path not specified";
-		}
-		
-		string computerDescriptionCode;
-		try
-		{
-			computerDescriptionCode=fileToString(translatePath(pathCalledFrom,computerDescriptionCodePath));
-		}
-		catch(...)
-		{
-			throw string()+"Could not load the file '"+computerDescriptionCodePath+"'";
-		}
-		
-		string optimizationRulesCode;
-		if(optimizationRulesCodePath.size()>0)
-		{
+			if(inputPath.size()==0)
+			{
+				throw string()+"Input path not specified";
+			}
+			if(outputPath.size()==0)
+			{
+				throw string()+"Output path not specified";
+			}
+			
+			string inputCode;
 			try
 			{
-				optimizationRulesCode=fileToString(translatePath(pathCalledFrom,optimizationRulesCodePath));
+				inputCode=fileToString(translatePath(pathCalledFrom,inputPath));
 			}
 			catch(...)
 			{
-				throw string()+"Could not load the file '"+optimizationRulesCodePath+"'";
-			}
-		}
-		
-		if(optimizationRulesCodePath.size()>0 && !optimizationOptions.optimizeGates)
-		{
-			throw string()+"Provided optimization rules, but those will not actually be used because the gate optimization option has not been set";
-		}
-		
-		ComputerBuilder computerBuilder;
-		Computer computer=computerBuilder.buildComputer(computerDescriptionCode,optimizationOptions,optimizationRulesCode);
-		
-		Computer::State computerState=computer.getInitialState();
-		
-		
-		int mov=16;
-		int jnls=23;
-		int mul=10;
-		int add=8;
-		int jls=22;
-		int out=24;
-		int j=17;
-		
-		int w=128;
-		int r=64;
-		int m=32;
-		
-		#define W(a) w,int(uint32_t(a)&0xff),int((uint32_t(a)>>8)&0xff)
-		
-		int loop1=16+3*3;
-		int loop1_end=loop1+28+3*1;
-		int loop2=loop1_end+6+3*1;
-		int loop2_end=loop2+17+3*1;
-		int loop3=loop2_end;
-		vector<int> machineCode=vector<int>{
-			mov,r|0,W(20),
-			mov,r|1,W(-20*2),
-			mov,r|2,0,
-			mov,r|3,1,
-			
-			
-			mov,r|4,0,
-			jnls,W(loop1_end),r|4,r|0,
-			//.loop1:
-			
-			mul,r|5,r|4,2,
-			add,r|6,r|1,r|5,
-			mov,m|r|6,r|3,
-			mov,r|7,r|3,
-			add,r|3,r|3,r|2,
-			mov,r|2,r|7,
-			
-			add,r|4,r|4,1,
-			jls,W(loop1),r|4,r|0,
-			//.loop1_end:
-			
-			
-			mov,r|4,0,
-			jnls,W(loop2_end),r|4,r|0,
-			//.loop2:
-			
-			mul,r|5,r|4,2,
-			add,r|6,r|1,r|5,
-			out,m|r|6,
-			
-			add,r|4,r|4,1,
-			jls,W(loop2),r|4,r|0,
-			//.loop2_end:
-			
-			
-			//.loop3:
-			j,W(loop3)
-		};
-		//Code in assembly:
-		/*
-		mov r0,20
-		mov r1,-20*2
-		mov r2,0
-		mov r3,1
-		
-		
-		mov r4,0
-		jnls .loop1_end r4,r0
-		.loop1:
-		
-		mul r5,r4,2
-		add r6,r1,r5
-		mov [r6],r3
-		mov r7,r3
-		add r3,r3,r2
-		mov r2,r7
-		
-		add r4,r4,1
-		jls .loop1 r4,r0
-		.loop1_end:
-		
-		
-		mov r4,0
-		jnls .loop2_end r4,r0
-		.loop2:
-		
-		mul r5,r4,2
-		add r6,r1,r5
-		out [r6]
-		
-		add r4,r4,1
-		jls .loop2 r4,r0
-		.loop2_end:
-		
-		
-		.loop3:
-		j .loop3
-		*/
-		
-		//Code in C:
-		/*
-		int numbersToOutput=20;
-		int output[20];
-		int oldValue=0;
-		int value=1;
-		for(int i=0;i<numbersToOutput;i++)
-		{
-			output[i]=value;
-			int newOldValue=value;
-			value+=oldValue;
-			oldValue=newOldValue;
-		}
-		for(int i=0;i<numbersToOutput;i++)
-		{
-			out(output[i]);
-		}
-		for(;;){}
-		*/
-		
-		
-		
-		wrapper::Window window;
-		window.create("Program");
-		graphics::Image windowIcon("application/icon.bmp");
-		window.setWindowIcon(windowIcon);
-		
-		graphics::Image textFont("textfont.bmp");
-		
-		uint64_t cycle=0;
-		string output;
-		
-		bool play=false;
-		
-		while(window.pollEventsAndUpdateInputAndTime())
-		{
-			if(window.input.key[wrapper::key::SPACE] && !window.input.keyOld[wrapper::key::SPACE])
-			{
-				play=!play;
+				throw string()+"Could not load the file '"+inputPath+"'";
 			}
 			
-			if(play || window.input.key['T'] && !window.input.keyOld['T'])
+			string outputCode=ComputerBuilder::optimizationSearch(inputCode,options);
+			
+			try
 			{
-				double timePerFrame=0.02;
-				
-				TimeCounter timeCounter;
-				timeCounter.start();
-				for(;;)
+				stringToFile(outputCode,outputPath);
+			}
+			catch(...)
+			{
+				throw string()+"Could not save the output";
+			}
+		}
+		else if(command=="simulate")
+		{
+			string computerDescriptionCodePath;
+			ComputerBuilder::OptimizationOptions optimizationOptions;
+			string optimizationRulesCodePath;
+			
+			for(int i=0;i<args.size();i++)
+			{
+				string arg=args[i];
+				if(arg.size()>0)
 				{
-					if(cycle<machineCode.size())
+					if(arg[0]=='-')
 					{
-						if(computerState.inputs.size()>=8)
+						if(arg.size()==1)
 						{
-							uint8_t inputNumber=machineCode[cycle];
-							for(int i=0;i<8;i++)
+							throw string()+"Expected option after the '-' character";
+						}
+						
+						string argfull=arg;
+						
+						if(arg=="-Og")
+						{
+							optimizationOptions.optimizeGates=true;
+						}
+						else if(arg=="-Om")
+						{
+							optimizationOptions.optimizeMemory=true;
+						}
+						else if(arg=="-Ov")
+						{
+							optimizationOptions.verbose=true;
+						}
+						else if(arg=="-Os")
+						{
+							optimizationOptions.silent=true;
+						}
+						else if(arg=="-Ow")
+						{
+							optimizationOptions.failAtWarning=true;
+						}
+						else if(removeStringStart(arg,"-Op="))
+						{
+							try
 							{
-								computerState.inputs[i]=(uint64_t(inputNumber)>>i)&1;
+								optimizationOptions.passes=std::stoi(arg);
+								if(optimizationOptions.passes<-1) throw 1;
+							}
+							catch(...)
+							{
+								throw string()+"Invalid value for option: '"+argfull+"'";
 							}
 						}
-					}
-					else if(cycle==machineCode.size())
-					{
-						if(computerState.inputs.size()>=9)
+						else if(removeStringStart(arg,"-Oc="))
 						{
-							computerState.inputs[8]=1;
-						}
-					}
-					
-					computerState=computer.simulateStep(computerState);
-					
-					if(computerState.outputs.size()>=17)
-					{
-						if(computerState.outputs[16])
-						{
-							uint64_t number=0;
-							for(int i=0;i<16;i++)
+							try
 							{
-								number|=((computerState.outputs[i]&1)<<i);
+								optimizationOptions.maxCombinations=std::stoi(arg);
+								if(optimizationOptions.maxCombinations<1) throw 1;
 							}
-							if(output.size()>0) output+=",";
-							output+=std::to_string(number);
+							catch(...)
+							{
+								throw string()+"Invalid value for option: '"+argfull+"'";
+							}
+						}
+						else if(removeStringStart(arg,"-Ot="))
+						{
+							try
+							{
+								optimizationOptions.maxTime=std::stod(arg);
+								if(optimizationOptions.maxTime<0 && optimizationOptions.maxTime!=-1) throw 1;
+							}
+							catch(...)
+							{
+								throw string()+"Invalid value for option: '"+argfull+"'";
+							}
+						}
+						else if(removeStringStart(arg,"-Of="))
+						{
+							if(arg.size()==0)
+							{
+								throw string()+"Invalid value for option: '"+argfull+"'";
+							}
+							optimizationRulesCodePath=arg;
+						}
+						else
+						{
+							throw string()+"'"+arg+"' option not recognized";
 						}
 					}
-					
-					cycle++;
-					
-					if(play)
+					else
 					{
-						if(timeCounter.end()>=timePerFrame) break;
+						computerDescriptionCodePath=arg;
 					}
-					else break;
+				}
+			}
+			if(computerDescriptionCodePath.size()==0)
+			{
+				throw string()+"Input path not specified";
+			}
+			
+			string computerDescriptionCode;
+			try
+			{
+				computerDescriptionCode=fileToString(translatePath(pathCalledFrom,computerDescriptionCodePath));
+			}
+			catch(...)
+			{
+				throw string()+"Could not load the file '"+computerDescriptionCodePath+"'";
+			}
+			
+			string optimizationRulesCode;
+			if(optimizationRulesCodePath.size()>0)
+			{
+				try
+				{
+					optimizationRulesCode=fileToString(translatePath(pathCalledFrom,optimizationRulesCodePath));
+				}
+				catch(...)
+				{
+					throw string()+"Could not load the file '"+optimizationRulesCodePath+"'";
 				}
 			}
 			
-			
-			
-			window.screen.clear(0x000000);
-			
-			window.screen.textprint(textFont,Pos(10,100),0xffffff,string("number of nand gates: ")+std::to_string(computer.nandGates.size()));
-			window.screen.textprint(textFont,Pos(10,150),0xffffff,string("number of memory bits: ")+std::to_string(computer.memory.size()));
-			
-			window.screen.textprint(textFont,Pos(10,200),0xffffff,string("cycle: ")+std::to_string(cycle));
-			
-			for(int lineIndex=0;;lineIndex++)
+			if(optimizationRulesCodePath.size()>0 && !optimizationOptions.optimizeGates)
 			{
-				int lineWidth=64;
-				
-				int from=lineIndex*lineWidth;
-				int to_=(lineIndex+1)*lineWidth;
-				
-				if(from>=output.size()) break;
-				
-				string line;
-				if(to_>output.size())
-				{
-					to_=output.size();
-				}
-				
-				line=output.substr(from,to_-from);
-				
-				int lineY=lineIndex*(16+8);
-				
-				window.screen.textprint(textFont,Pos(10,600+lineY),0xffffff,line);
+				throw string()+"Provided optimization rules, but those will not actually be used because the gate optimization option has not been set";
 			}
 			
-			drawComputerState(window.screen,computerState,Pos(500,50),Pos(512,512),16);
-			drawComputerState(window.screen,computerState,Pos(1100,50),Pos(512,512),64);
+			ComputerBuilder computerBuilder;
+			Computer computer=computerBuilder.buildComputer(computerDescriptionCode,optimizationOptions,optimizationRulesCode);
 			
-			window.drawScreen();
+			Computer::State<uint8_t> computerState=computer.getInitialState<Computer::State<uint8_t>>();
+			
+			
+			int mov=16;
+			int jnls=23;
+			int mul=10;
+			int add=8;
+			int jls=22;
+			int out=24;
+			int j=17;
+			
+			int w=128;
+			int r=64;
+			int m=32;
+			
+			#define W(a) w,int(uint32_t(a)&0xff),int((uint32_t(a)>>8)&0xff)
+			
+			int loop1=16+3*3;
+			int loop1_end=loop1+28+3*1;
+			int loop2=loop1_end+6+3*1;
+			int loop2_end=loop2+17+3*1;
+			int loop3=loop2_end;
+			vector<int> machineCode=vector<int>{
+				mov,r|0,W(20),
+				mov,r|1,W(-20*2),
+				mov,r|2,0,
+				mov,r|3,1,
+				
+				
+				mov,r|4,0,
+				jnls,W(loop1_end),r|4,r|0,
+				//.loop1:
+				
+				mul,r|5,r|4,2,
+				add,r|6,r|1,r|5,
+				mov,m|r|6,r|3,
+				mov,r|7,r|3,
+				add,r|3,r|3,r|2,
+				mov,r|2,r|7,
+				
+				add,r|4,r|4,1,
+				jls,W(loop1),r|4,r|0,
+				//.loop1_end:
+				
+				
+				mov,r|4,0,
+				jnls,W(loop2_end),r|4,r|0,
+				//.loop2:
+				
+				mul,r|5,r|4,2,
+				add,r|6,r|1,r|5,
+				out,m|r|6,
+				
+				add,r|4,r|4,1,
+				jls,W(loop2),r|4,r|0,
+				//.loop2_end:
+				
+				
+				//.loop3:
+				j,W(loop3)
+			};
+			//Code in assembly:
+			/*
+			mov r0,20
+			mov r1,-20*2
+			mov r2,0
+			mov r3,1
+			
+			
+			mov r4,0
+			jnls .loop1_end r4,r0
+			.loop1:
+			
+			mul r5,r4,2
+			add r6,r1,r5
+			mov [r6],r3
+			mov r7,r3
+			add r3,r3,r2
+			mov r2,r7
+			
+			add r4,r4,1
+			jls .loop1 r4,r0
+			.loop1_end:
+			
+			
+			mov r4,0
+			jnls .loop2_end r4,r0
+			.loop2:
+			
+			mul r5,r4,2
+			add r6,r1,r5
+			out [r6]
+			
+			add r4,r4,1
+			jls .loop2 r4,r0
+			.loop2_end:
+			
+			
+			.loop3:
+			j .loop3
+			*/
+			
+			//Code in C:
+			/*
+			int numbersToOutput=20;
+			int output[20];
+			int oldValue=0;
+			int value=1;
+			for(int i=0;i<numbersToOutput;i++)
+			{
+				output[i]=value;
+				int newOldValue=value;
+				value+=oldValue;
+				oldValue=newOldValue;
+			}
+			for(int i=0;i<numbersToOutput;i++)
+			{
+				out(output[i]);
+			}
+			for(;;){}
+			*/
+			
+			
+			
+			wrapper::Window window;
+			window.create("Program");
+			graphics::Image windowIcon("application/icon.bmp");
+			window.setWindowIcon(windowIcon);
+			
+			graphics::Image textFont("textfont.bmp");
+			
+			uint64_t cycle=0;
+			string output;
+			
+			bool play=false;
+			
+			while(window.pollEventsAndUpdateInputAndTime())
+			{
+				if(window.input.key[wrapper::key::SPACE] && !window.input.keyOld[wrapper::key::SPACE])
+				{
+					play=!play;
+				}
+				
+				if(play || window.input.key['T'] && !window.input.keyOld['T'])
+				{
+					double timePerFrame=0.02;
+					
+					TimeCounter timeCounter;
+					timeCounter.start();
+					for(;;)
+					{
+						if(cycle<machineCode.size())
+						{
+							if(computerState.inputs.size()>=8)
+							{
+								uint8_t inputNumber=machineCode[cycle];
+								for(int i=0;i<8;i++)
+								{
+									computerState.inputs[i]=computerState.getConstant((uint64_t(inputNumber)>>i)&1);
+								}
+							}
+						}
+						else if(cycle==machineCode.size())
+						{
+							if(computerState.inputs.size()>=9)
+							{
+								computerState.inputs[8]=computerState.getConstant(1);
+							}
+						}
+						
+						computerState=computer.simulateStep(computerState);
+						
+						if(computerState.outputs.size()>=17)
+						{
+							if(computerState.getBitValue(computerState.outputs[16],0))
+							{
+								uint64_t number=0;
+								for(int i=0;i<16;i++)
+								{
+									number|=(uint64_t(computerState.getBitValue(computerState.outputs[i],0))<<i);
+								}
+								if(output.size()>0) output+=",";
+								output+=std::to_string(number);
+							}
+						}
+						
+						cycle++;
+						
+						if(play)
+						{
+							if(timeCounter.end()>=timePerFrame) break;
+						}
+						else break;
+					}
+				}
+				
+				
+				
+				window.screen.clear(0x000000);
+				
+				window.screen.textprint(textFont,Pos(10,100),0xffffff,string("number of nand gates: ")+std::to_string(computer.nandGates.size()));
+				window.screen.textprint(textFont,Pos(10,150),0xffffff,string("number of memory bits: ")+std::to_string(computer.memory.size()));
+				
+				window.screen.textprint(textFont,Pos(10,200),0xffffff,string("cycle: ")+std::to_string(cycle));
+				
+				for(int lineIndex=0;;lineIndex++)
+				{
+					int lineWidth=64;
+					
+					int from=lineIndex*lineWidth;
+					int to_=(lineIndex+1)*lineWidth;
+					
+					if(from>=output.size()) break;
+					
+					string line;
+					if(to_>output.size())
+					{
+						to_=output.size();
+					}
+					
+					line=output.substr(from,to_-from);
+					
+					int lineY=lineIndex*(16+8);
+					
+					window.screen.textprint(textFont,Pos(10,600+lineY),0xffffff,line);
+				}
+				
+				drawComputerState(window.screen,computerState,Pos(500,50),Pos(512,512),16);
+				drawComputerState(window.screen,computerState,Pos(1100,50),Pos(512,512),64);
+				
+				window.drawScreen();
+			}
+			
+			window.destroy();
 		}
-		
-		window.destroy();
+		else
+		{
+			throw string()+"Command '"+command+"' not recognized";
+		}
 	}
 	catch(const string& str)
 	{
 		std::cout<<str<<std::endl;
+		return 1;
 	}
 	
 	return 0;

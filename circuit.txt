@@ -1,0 +1,102 @@
+not:
+
+o: out
+i: in
+
+o=nand i i
+
+
+
+and:
+
+o: out
+ia: in
+ib: in
+
+a=nand ia ib
+o=not a
+
+
+
+or:
+
+o: out
+ia: in
+ib: in
+
+a=not ia
+b=not ib
+o=nand a b
+
+
+
+xor:
+
+o: out
+ia: in
+ib: in
+
+a=nand ia ib
+b=or ia ib
+o=and a b
+
+
+
+nor:
+
+o: out
+ia: in
+ib: in
+
+a=or ia ib
+o=not a
+
+
+
+andnot:
+
+o: out
+ia: in
+ib: in
+
+ib_not=not ib
+o=and ia ib_not
+
+
+
+fulladder:
+ia: in
+ib: in
+ic: in
+o: out
+oc: out
+
+o_a=xor ia ib
+o=xor o_a ic
+oc_a=and ia ib
+oc_b=and ia ic
+oc_c=and ib ic
+oc_d=or oc_a oc_b
+oc=or oc_d oc_c
+
+
+
+halfadder:
+ia: in
+ib: in
+o: out
+oc: out
+
+o=xor ia ib
+oc=and ia ib
+
+
+
+main:
+ia: in
+ib: in
+ic: in
+o: out
+oc: out
+
+o oc=fulladder ia ib ic

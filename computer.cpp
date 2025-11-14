@@ -182,67 +182,134 @@ class Computer
 		return checkValidity(trace);
 	}
 	
+	template <class T>
 	class State
 	{
 		public:
 		
-		typedef uint64_t BitType;
-		static constexpr int bitDepth=sizeof(BitType)*8;
+		size_t size=1;
 		
-		vector<BitType> inputs;
-		vector<BitType> memory;
-		vector<BitType> outputs;
+		vector<T> inputs;
+		vector<T> memory;
+		vector<T> outputs;
 		
 		State(){}
-		State(int numberOfInputs,int numberOfMemoryBits,int numberOfOutputs)
+		State(Computer& computer,size_t _size)
 		{
-			inputs=vector<BitType>(numberOfInputs,0);
-			memory=vector<BitType>(numberOfMemoryBits,0);
-			outputs=vector<BitType>(numberOfOutputs,0);
+			*this=State(computer.numberOfInputs,computer.memory.size(),computer.outputs.size(),size);
 		}
-	};
-	
-	State getInitialState()
-	{
-		return State(numberOfInputs,memory.size(),outputs.size());
-	}
-	
-	private:
-		State::BitType getInput(const Input& input,const State& inputState,const vector<State::BitType>& nandGateOutputs)
+		State(int numberOfInputs,int numberOfMemoryBits,int numberOfOutputs,size_t _size)
+		{
+			if constexpr(std::is_same_v<T,vector<uint64_t>>){}
+			else
+			{
+				if(_size>sizeof(T)*8)
+				{
+					throw string()+"The computer state size is too big for the type: "+std::to_string(_size)+">"+std::to_string(sizeof(T)*8);
+				}
+			}
+			
+			size=_size;
+			
+			inputs=vector<T>(numberOfInputs,getConstant(0));
+			memory=vector<T>(numberOfMemoryBits,getConstant(0));
+			outputs=vector<T>(numberOfOutputs,getConstant(0));
+		}
+		
+		State getNewEmptyState() const
+		{
+			return State(inputs.size(),memory.size(),outputs.size(),size);
+		}
+		
+		int getBitValue(const T& bit,size_t index) const
+		{
+			if constexpr(std::is_same_v<T,vector<uint64_t>>)
+			{
+				if(index>=size) return 0;
+				size_t indexInVector=index/64;
+				size_t offset=index%64;
+				if(indexInVector>=bit.size()) return 0;
+				else return (bit[indexInVector]>>offset)&1;
+			}
+			else
+			{
+				if(index>=sizeof(bit)*8) return 0;
+				else return (uint64_t(bit)>>index)&1;
+			}
+		}
+		T getConstant(int constant) const
+		{
+			if constexpr(std::is_same_v<T,vector<uint64_t>>)
+			{
+				return T(size/64+(size%64!=0 ? 1 : 0),constant ? uint64_t(int64_t(int32_t(-1))) : 0);
+			}
+			else
+			{
+				if(constant)
+				{
+					if constexpr(std::is_same_v<T,uint8_t>) return -1;
+					else if constexpr(std::is_same_v<T,uint16_t>) return -1;
+					else if constexpr(std::is_same_v<T,uint32_t>) return -1;
+					else if constexpr(std::is_same_v<T,uint64_t>) return uint64_t(int64_t(int32_t(-1)));
+					else return -1;
+				}
+				else return 0;
+			}
+		}
+		T computeNand(const T& a,const T& b) const
+		{
+			if constexpr(std::is_same_v<T,vector<uint64_t>>)
+			{
+				T r(size/64+(size%64!=0 ? 1 : 0));
+				for(size_t i=0;i<r.size();i++)
+				{
+					r[i]=~(a[i]&b[i]);
+				}
+			}
+			else return ~(a&b);
+		}
+		T getInput(const Input& input,const vector<T>& nandGateOutputs) const
 		{
 			if(input.type==Input::Type::constant)
 			{
-				if(input.index) return State::BitType(int64_t(-1));
-				else return 0;
+				return getConstant(input.index);
 			}
-			else if(input.type==Input::Type::computerInput) return inputState.inputs[input.index];
-			else if(input.type==Input::Type::computerMemory) return inputState.memory[input.index];
+			else if(input.type==Input::Type::computerInput) return inputs[input.index];
+			else if(input.type==Input::Type::computerMemory) return memory[input.index];
 			else if(input.type==Input::Type::nandGate) return nandGateOutputs[input.index];
-			else return 0;
+			else return getConstant(0);
 		}
-	public:
-	State simulateStep(const State& inputState)
+	};
+	
+	template <class T>
+	T getInitialState(size_t size=1)
 	{
-		State outputState(numberOfInputs,memory.size(),outputs.size());
+		return T(*this,size);
+	}
+	
+	template <class T>
+	State<T> simulateStep(const State<T>& inputState)
+	{
+		State<T> outputState=inputState.getNewEmptyState();
 		
-		vector<State::BitType> nandGateOutputs(nandGates.size(),0);
+		vector<T> nandGateOutputs(nandGates.size(),inputState.getConstant(0));
 		
 		for(int i=0;i<nandGates.size();i++)
 		{
-			State::BitType a=getInput(nandGates[i].inputA,inputState,nandGateOutputs);
-			State::BitType b=getInput(nandGates[i].inputB,inputState,nandGateOutputs);
+			T a=inputState.getInput(nandGates[i].inputA,nandGateOutputs);
+			T b=inputState.getInput(nandGates[i].inputB,nandGateOutputs);
 			
-			nandGateOutputs[i]=~(a&b);
+			nandGateOutputs[i]=inputState.computeNand(a,b);
 		}
 		
 		for(int i=0;i<memory.size();i++)
 		{
-			outputState.memory[i]=getInput(memory[i].input,inputState,nandGateOutputs);
+			outputState.memory[i]=inputState.getInput(memory[i].input,nandGateOutputs);
 		}
 		
 		for(int i=0;i<outputs.size();i++)
 		{
-			outputState.outputs[i]=getInput(outputs[i].input,inputState,nandGateOutputs);
+			outputState.outputs[i]=inputState.getInput(outputs[i].input,nandGateOutputs);
 		}
 		
 		return outputState;

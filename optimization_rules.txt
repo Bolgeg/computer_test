@@ -66,6 +66,23 @@ o=set 0
 
 
 
+RULE_AandBorAandNotB:
+o: out
+ia: in
+ib: in
+ib_not=not ib
+a=nand ia ib
+b=nand ia ib_not
+o=nand a b
+
+RULEO_AandBorAandNotB:
+o: out
+ia: in
+ib: in
+o=set ia
+
+
+
 RULE_notx2:
 oa: out
 ob: out

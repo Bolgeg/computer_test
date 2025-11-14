@@ -1,17 +1,274 @@
 class ComputerBuilder
 {
+	private:
+		template <class T>
+		class NameMapper
+		{
+			private:
+				std::map<string,T> map;
+				T valueToReturnIfNotFound;
+			public:
+			
+			NameMapper(){}
+			NameMapper(const T& _valueToReturnIfNotFound)
+			{
+				valueToReturnIfNotFound=_valueToReturnIfNotFound;
+			}
+			
+			void clear()
+			{
+				map.clear();
+			}
+			
+			inline T& operator [](const string& name)
+			{
+				if(!map.contains(name)) return valueToReturnIfNotFound;
+				return map[name];
+			}
+			
+			bool containsName(const string& name) const
+			{
+				return map.contains(name);
+			}
+			void add(const string& name,const T& value)
+			{
+				map[name]=value;
+			}
+			void remove(const string& name)
+			{
+				map.erase(name);
+			}
+			void set(const string& name,const T& value)
+			{
+				map[name]=value;
+			}
+		};
+		
+		template <class T>
+		class NamedVector
+		{
+			public:
+			
+			static constexpr size_t npos=size_t(int64_t(int32_t(-1)));
+			
+			private:
+				using ContainerT=vector<T>;
+				using const_iterator=ContainerT::const_iterator;
+				
+				ContainerT container;
+				
+				NameMapper<size_t> nameToIndex=NameMapper<size_t>(npos);
+				
+				void addName(const string& name,size_t index)
+				{
+					nameToIndex.add(name,index);
+				}
+				void removeName(const string& name)
+				{
+					nameToIndex.remove(name);
+				}
+				void setName(const string& name,size_t index)
+				{
+					nameToIndex.set(name,index);
+				}
+				void removeNamesInRange(size_t start,size_t end_)
+				{
+					for(size_t index=start;index<end_;index++)
+					{
+						nameToIndex.remove(container[index].name);
+					}
+					for(size_t index=end_;index<container.size();index++)
+					{
+						nameToIndex.set(container[index].name,index-(end_-start));
+					}
+				}
+				void addNamesInRange(size_t start,size_t end_)
+				{
+					for(size_t index=end_;index<container.size();index++)
+					{
+						nameToIndex.set(container[index].name,index+(end_-start));
+					}
+					for(size_t index=start;index<end_;index++)
+					{
+						nameToIndex.add(container[index].name,index);
+					}
+				}
+				void addAllNames()
+				{
+					addNamesInRange(0,container.size());
+				}
+			public:
+			
+			NamedVector(){}
+			inline NamedVector(std::initializer_list<T> init)
+			{
+				container=ContainerT(init);
+				
+				addAllNames();
+			}
+			template <class InputIt>
+			NamedVector(InputIt first,InputIt last)
+			{
+				container=ContainerT(first,last);
+				
+				addAllNames();
+			}
+			
+			inline const T& at(size_t index) const
+			{
+				return container.at(index);
+			}
+			inline const T& operator [](size_t index) const
+			{
+				return container[index];
+			}
+			inline const T& front() const
+			{
+				return container.front();
+			}
+			inline const T& back() const
+			{
+				return container.back();
+			}
+			inline const T*data() const
+			{
+				return container.data();
+			}
+			
+			inline size_t size() const
+			{
+				return container.size();
+			}
+			
+			void clear()
+			{
+				container.clear();
+				nameToIndex.clear();
+			}
+			
+			const_iterator begin() const
+			{
+				return container.begin();
+			}
+			const_iterator end() const
+			{
+				return container.end();
+			}
+			
+			void insert(const_iterator pos,const T& value)
+			{
+				size_t position=pos-container.begin();
+				container.insert(pos,value);
+				
+				addNamesInRange(position,position+1);
+			}
+			template <class InputIt>
+			void insert(const_iterator pos,InputIt first,InputIt last)
+			{
+				size_t position=pos-container.begin();
+				size_t length=last-first;
+				container.insert(pos,first,last);
+				
+				addNamesInRange(position,position+length);
+			}
+			void erase(const_iterator pos)
+			{
+				size_t position=pos-container.begin();
+				removeNamesInRange(position,position+1);
+				
+				container.erase(pos);
+			}
+			void erase(const_iterator first,const_iterator last)
+			{
+				size_t position=first-container.begin();
+				size_t length=last-first;
+				removeNamesInRange(position,position+length);
+				
+				container.erase(first,last);
+			}
+			
+			void push_back(const T& value)
+			{
+				size_t index=container.size();
+				
+				container.push_back(value);
+				
+				addName(container[index].name,index);
+			}
+			void push_back(T&& value)
+			{
+				size_t index=container.size();
+				
+				container.push_back(value);
+				
+				addName(container[index].name,index);
+			}
+			template <class... Args>
+			inline void emplace_back(Args&&... args)
+			{
+				size_t index=container.size();
+				
+				container.emplace_back(args...);
+				
+				addName(container[index].name,index);
+			}
+			
+			void set(size_t index,const T& value)
+			{
+				string oldName=container.at(index).name;
+				
+				container[index]=value;
+				
+				if(container[index].name!=oldName)
+				{
+					removeName(oldName);
+					addName(container[index].name,index);
+				}
+			}
+			size_t find(const string& name)
+			{
+				return nameToIndex[name];
+			}
+		};
 	public:
 	
 	class OptimizationOptions
 	{
 		public:
 		
+		bool silent=false;
 		bool verbose=false;
+		bool failAtWarning=false;
 		bool optimizeGates=false;
 		bool optimizeMemory=false;
 		int passes=-1;
 		int maxCombinations=1000000;
 		double maxTime=-1;
+		
+		void setAsSilentOptimizeGates(bool _failAtWarning,int _maxCombinations)
+		{
+			silent=true;
+			failAtWarning=_failAtWarning;
+			optimizeGates=true;
+			maxCombinations=_maxCombinations;
+		}
+	};
+	
+	class OptimizationSearchOptions
+	{
+		public:
+		
+		bool silent=false;
+		string algorithm;
+		int maxGates=-1;
+		double maxTime=-1;
+		
+		void setAsSilent(const string& _algorithm,int _maxGates)
+		{
+			silent=true;
+			algorithm=_algorithm;
+			maxGates=_maxGates;
+		}
 	};
 	
 	class MessageQueue
@@ -22,6 +279,8 @@ class ComputerBuilder
 				public:
 				
 				string name;
+				
+				bool isWarning=false;
 				
 				uint64_t totalMessageCount=0;
 				
@@ -35,9 +294,10 @@ class ComputerBuilder
 					name=_name;
 				}
 				
-				void add(const string& message)
+				void add(const string& message,bool _isWarning)
 				{
 					totalMessageCount++;
+					if(_isWarning) isWarning=true;
 					if(messages.size()<maxSize) messages.push_back(message);
 					else
 					{
@@ -54,27 +314,30 @@ class ComputerBuilder
 						}
 					}
 				}
-				void flush(const string& prefixText)
+				string flushGetString(const string& prefixText)
 				{
+					string str;
 					if(totalMessageCount>0)
 					{
+						string warningString= isWarning ? "Warning: " : string();
+						
 						if(totalMessageCount==1)
 						{
-							std::cout<<prefixText<<messages[0]<<std::endl;
+							str+=prefixText+warningString+messages[0];
 						}
 						else
 						{
-							std::cout<<prefixText<<name<<" (x"<<totalMessageCount<<"):";
+							str+=prefixText+warningString+name+" (x"+std::to_string(totalMessageCount)+"):";
 							for(int i=0;i<messages.size();i++)
 							{
-								std::cout<<"\n    '"<<messages[i]<<"'...";
+								str+=string()+"\n    '"+messages[i]+"'...";
 							}
-							std::cout<<std::endl;
 						}
 						
 						totalMessageCount=0;
 						messages.resize(0);
 					}
+					return str;
 				}
 			};
 			
@@ -84,14 +347,24 @@ class ComputerBuilder
 			
 			uint64_t messagesPerFlush=1;
 			
-			void flushType(int index)
+			string flushTypeGetString(int index)
 			{
+				string str;
 				if(index>=0 && index<typeQueues.size())
 				{
-					typeQueues[index].flush(prefixText);
+					str=typeQueues[index].flushGetString(prefixText);
 					typeQueues.erase(typeQueues.begin()+index);
 				}
+				return str;
 			}
+			void flushType(int index)
+			{
+				string str=flushTypeGetString(index);
+				if(outputEnabled) std::cout<<str<<std::endl;
+			}
+			
+			bool outputEnabled=true;
+			bool throwAtWarning=false;
 		public:
 		
 		MessageQueue(const string& _prefixText=string(),uint64_t _messagesPerFlush=1)
@@ -107,7 +380,19 @@ class ComputerBuilder
 		{
 			messagesPerFlush=_messagesPerFlush;
 		}
-		void add(const string& messageType,const string& message)
+		void disableOutput()
+		{
+			outputEnabled=false;
+		}
+		void enableOutput()
+		{
+			outputEnabled=true;
+		}
+		void setThrowAtWarning(bool value)
+		{
+			throwAtWarning=value;
+		}
+		void add(const string& messageType,bool isWarning,const string& message)
 		{
 			int index=-1;
 			for(int i=0;i<typeQueues.size();i++)
@@ -124,12 +409,25 @@ class ComputerBuilder
 				typeQueues.emplace_back(messageType);
 			}
 			
-			typeQueues[index].add(message);
+			typeQueues[index].add(message,isWarning);
 			
-			if(typeQueues[index].totalMessageCount>=messagesPerFlush)
+			if(isWarning && throwAtWarning)
+			{
+				throw flushGetString();
+			}
+			else if(typeQueues[index].totalMessageCount>=messagesPerFlush)
 			{
 				flushType(index);
 			}
+		}
+		string flushGetString()
+		{
+			string str;
+			for(int i=int(typeQueues.size())-1;i>=0;i--)
+			{
+				str+=flushTypeGetString(i);
+			}
+			return str;
 		}
 		void flush()
 		{
@@ -144,37 +442,11 @@ class ComputerBuilder
 	{
 		public:
 		
-		class Input
-		{
-			public:
-			
-			enum class Type{computerInput,computerMemory,nandGate,constant,yesGate};
-			
-			Type type=Type::constant;
-			int index=0;
-			
-			Input(){}
-			Input(const Type& _type,int _index)
-			{
-				type=_type;
-				index=_index;
-			}
-			
-			bool operator ==(const Input& b) const
-			{
-				return type==b.type && index==b.index;
-			}
-			bool operator !=(const Input& b) const
-			{
-				return !(*this==b);
-			}
-		};
-		
 		class Pointer
 		{
 			public:
 			
-			enum class Type{none,computerInput,computerOutput,computerMemory,nandGate,constant,yesGate};
+			enum class Type{none,input,output,memory,nandGate,constant,yesGate};
 			
 			Type type=Type::none;
 			int index=0;
@@ -184,26 +456,6 @@ class ComputerBuilder
 			{
 				type=_type;
 				index=_index;
-			}
-			explicit Pointer(const Input& input)
-			{
-				if(input.type==Input::Type::computerInput) type=Type::computerInput;
-				else if(input.type==Input::Type::computerMemory) type=Type::computerMemory;
-				else if(input.type==Input::Type::nandGate) type=Type::nandGate;
-				else if(input.type==Input::Type::constant) type=Type::constant;
-				else if(input.type==Input::Type::yesGate) type=Type::yesGate;
-				index=input.index;
-			}
-			explicit operator Input() const
-			{
-				Input::Type inputType;
-				if(type==Type::computerInput) inputType=Input::Type::computerInput;
-				else if(type==Type::computerMemory) inputType=Input::Type::computerMemory;
-				else if(type==Type::nandGate) inputType=Input::Type::nandGate;
-				else if(type==Type::constant) inputType=Input::Type::constant;
-				else if(type==Type::yesGate) inputType=Input::Type::yesGate;
-				else throw string()+"Invalid pointer to input conversion";
-				return Input(inputType,index);
 			}
 			
 			bool isNone() const
@@ -215,9 +467,9 @@ class ComputerBuilder
 			{
 				string str;
 				if(type==Type::none) str="none";
-				else if(type==Type::computerInput) str="input";
-				else if(type==Type::computerOutput) str="output";
-				else if(type==Type::computerMemory) str="memory";
+				else if(type==Type::input) str="input";
+				else if(type==Type::output) str="output";
+				else if(type==Type::memory) str="memory";
 				else if(type==Type::nandGate) str="nandgate";
 				else if(type==Type::constant) str="constant";
 				else if(type==Type::yesGate) str="yesgate";
@@ -230,16 +482,16 @@ class ComputerBuilder
 			{
 				vector<Pointer> inputs;
 				if(type==Type::none){}
-				else if(type==Type::computerInput){}
-				else if(type==Type::computerOutput) inputs.push_back(Pointer(computer.outputs[index].input));
-				else if(type==Type::computerMemory) inputs.push_back(Pointer(computer.memory[index].input));
+				else if(type==Type::input){}
+				else if(type==Type::output) inputs.push_back(computer.outputs[index].input);
+				else if(type==Type::memory) inputs.push_back(computer.memory[index].input);
 				else if(type==Type::nandGate)
 				{
-					inputs.push_back(Pointer(computer.nandGates[index].inputA));
-					inputs.push_back(Pointer(computer.nandGates[index].inputB));
+					inputs.push_back(computer.nandGates[index].inputA);
+					inputs.push_back(computer.nandGates[index].inputB);
 				}
 				else if(type==Type::constant){}
-				else if(type==Type::yesGate) inputs.push_back(Pointer(computer.yesGates[index].input));
+				else if(type==Type::yesGate) inputs.push_back(computer.yesGates[index].input);
 				return inputs;
 			}
 			static vector<Pointer> getDistinct(const vector<Pointer>& pointers)
@@ -263,13 +515,13 @@ class ComputerBuilder
 			{
 				return getDistinct(getInputs(computer));
 			}
-			vector<Input*> getInputPtrs(ComputerData& computer) const
+			vector<Pointer*> getInputPtrs(ComputerData& computer) const
 			{
-				vector<Input*> inputPtrs;
+				vector<Pointer*> inputPtrs;
 				if(type==Type::none){}
-				else if(type==Type::computerInput){}
-				else if(type==Type::computerOutput) inputPtrs.push_back(&computer.outputs[index].input);
-				else if(type==Type::computerMemory) inputPtrs.push_back(&computer.memory[index].input);
+				else if(type==Type::input){}
+				else if(type==Type::output) inputPtrs.push_back(&computer.outputs[index].input);
+				else if(type==Type::memory) inputPtrs.push_back(&computer.memory[index].input);
 				else if(type==Type::nandGate)
 				{
 					inputPtrs.push_back(&computer.nandGates[index].inputA);
@@ -283,22 +535,24 @@ class ComputerBuilder
 			{
 				vector<Pointer> outputs;
 				
-				if(type==Type::computerInput || type==Type::computerMemory || type==Type::nandGate || type==Type::yesGate)
+				if(type==Type::input || type==Type::memory || type==Type::nandGate || type==Type::yesGate)
 				{
-					Input input(*this);
-					
 					for(int i=0;i<computer.outputs.size();i++)
 					{
-						if(computer.outputs[i].input==input) outputs.emplace_back(Type::computerOutput,i);
+						if(computer.outputs[i].input==*this) outputs.emplace_back(Type::output,i);
 					}
 					for(int i=0;i<computer.memory.size();i++)
 					{
-						if(computer.memory[i].input==input) outputs.emplace_back(Type::computerMemory,i);
+						if(computer.memory[i].input==*this) outputs.emplace_back(Type::memory,i);
 					}
 					for(int i=0;i<computer.nandGates.size();i++)
 					{
-						if(computer.nandGates[i].inputA==input) outputs.emplace_back(Type::nandGate,i);
-						if(computer.nandGates[i].inputB==input) outputs.emplace_back(Type::nandGate,i);
+						if(computer.nandGates[i].inputA==*this) outputs.emplace_back(Type::nandGate,i);
+						if(computer.nandGates[i].inputB==*this) outputs.emplace_back(Type::nandGate,i);
+					}
+					for(int i=0;i<computer.yesGates.size();i++)
+					{
+						if(computer.yesGates[i].input==*this) outputs.emplace_back(Type::yesGate,i);
 					}
 				}
 				
@@ -341,9 +595,9 @@ class ComputerBuilder
 			public:
 			
 			bool inputResolved=false;
-			Input input;
+			Pointer input;
 			
-			void setInput(const Input& _input)
+			void setInput(const Pointer& _input)
 			{
 				inputResolved=true;
 				input=_input;
@@ -354,10 +608,10 @@ class ComputerBuilder
 		{
 			public:
 			
-			Input input;
+			Pointer input;
 			
 			OutputGate(){}
-			explicit OutputGate(const Input& _input)
+			explicit OutputGate(const Pointer& _input)
 			{
 				input=_input;
 			}
@@ -367,13 +621,13 @@ class ComputerBuilder
 		{
 			public:
 			
-			Input inputA;
-			Input inputB;
+			Pointer inputA;
+			Pointer inputB;
 			
 			int lineIndexesIndex=-1;
 			
 			NandGate(){}
-			NandGate(const Input& _inputA,const Input& _inputB)
+			NandGate(const Pointer& _inputA,const Pointer& _inputB)
 			{
 				inputA=_inputA;
 				inputB=_inputB;
@@ -412,17 +666,17 @@ class ComputerBuilder
 			nandGates.push_back(nandGate);
 			return index;
 		}
-		int addMemory(const Input& memoryOutputGateInput)
+		int addMemory(const Pointer& memoryOutputGateInput)
 		{
 			int index=memory.size();
 			memory.emplace_back(memoryOutputGateInput);
 			return index;
 		}
-		void setMemory(int index,const Input& memoryOutputGateInput)
+		void setMemory(int index,const Pointer& memoryOutputGateInput)
 		{
 			memory[index]=OutputGate(memoryOutputGateInput);
 		}
-		int addOutput(const Input& outputOutputGateInput)
+		int addOutput(const Pointer& outputOutputGateInput)
 		{
 			int index=outputs.size();
 			outputs.emplace_back(outputOutputGateInput);
@@ -434,19 +688,19 @@ class ComputerBuilder
 			yesGates.push_back(yesGate);
 			return index;
 		}
-		void setYesGateInput(int index,const Input& yesGateInput)
+		void setYesGateInput(int index,const Pointer& yesGateInput)
 		{
 			yesGates[index].setInput(yesGateInput);
 		}
 		
 		private:
-			Computer::Input getComputerInput(const Input& input)
+			Computer::Input getComputerInput(const Pointer& input) const
 			{
 				Computer::Input::Type type=Computer::Input::Type::computerInput;
-				if(input.type==Input::Type::computerInput){}
-				else if(input.type==Input::Type::computerMemory) type=Computer::Input::Type::computerMemory;
-				else if(input.type==Input::Type::nandGate) type=Computer::Input::Type::nandGate;
-				else if(input.type==Input::Type::constant) type=Computer::Input::Type::constant;
+				if(input.type==Pointer::Type::input){}
+				else if(input.type==Pointer::Type::memory) type=Computer::Input::Type::computerMemory;
+				else if(input.type==Pointer::Type::nandGate) type=Computer::Input::Type::nandGate;
+				else if(input.type==Pointer::Type::constant) type=Computer::Input::Type::constant;
 				else
 				{
 					throw string("Error: Invalid gate for final computer");
@@ -455,7 +709,7 @@ class ComputerBuilder
 				return Computer::Input(type,input.index);
 			}
 		public:
-		Computer getComputer()
+		Computer getComputer() const
 		{
 			Computer computer;
 			
@@ -479,342 +733,344 @@ class ComputerBuilder
 		}
 	};
 	
+	private:
+		class SafeInteger
+		{
+			private:
+				int internal_value=0;
+				
+				static void assertDivision(int dividend,int divisor,bool isModulo)
+				{
+					if(divisor==0 || dividend==int(uint32_t(1)<<31) && divisor==-1)
+					{
+						string operationString= isModulo ? "modulo" : "division";
+						throw string()+operationString+" operation of invalid integers: "+std::to_string(dividend)+" and "+std::to_string(divisor);
+					}
+				}
+				static bool multiplicationOverflows(int a,int b)
+				{
+					uint64_t absA=std::abs(int64_t(a));
+					uint64_t absB=std::abs(int64_t(b));
+					
+					uint64_t absC=absA*absB;
+					
+					if((a<0)!=(b<0) && absC==(uint64_t(1)<<31)) return false;
+					if(absC>=(uint64_t(1)<<31)) return true;
+					return false;
+				}
+				static bool additionOverflows_positiveAddition_bothPositive(uint64_t absA,uint64_t absB)
+				{
+					uint64_t c=absA+absB;
+					return c>=(uint64_t(1)<<31);
+				}
+				static bool additionOverflows_positiveAddition_bothNegative(uint64_t absA,uint64_t absB)
+				{
+					uint64_t c=absA+absB;
+					return c>(uint64_t(1)<<31);
+				}
+				static bool additionOverflows_positiveAddition_aPositive_bNegative(uint64_t absA,uint64_t absB)
+				{
+					uint64_t c=absA-absB;
+					if(c<(uint64_t(1)<<31)) return false;
+					if(-c<=(uint64_t(1)<<31)) return false;
+					return true;
+				}
+				static bool additionSubtractionOverflows(int a,int b,bool isSubtraction)
+				{
+					bool posA= a>=0;
+					bool posB= b>=0;
+					
+					if(isSubtraction) posB=!posB;
+					
+					uint64_t absA=std::abs(int64_t(a));
+					uint64_t absB=std::abs(int64_t(b));
+					
+					if(posA && posB) return additionOverflows_positiveAddition_bothPositive(absA,absB);
+					if(!posA && !posB) return additionOverflows_positiveAddition_bothNegative(absA,absB);
+					if(posA && !posB) return additionOverflows_positiveAddition_aPositive_bNegative(absA,absB);
+					if(!posA && posB) return additionOverflows_positiveAddition_aPositive_bNegative(absB,absA);
+					
+					return false;
+				}
+				static bool additionOverflows(int a,int b)
+				{
+					return additionSubtractionOverflows(a,b,false);
+				}
+				static bool subtractionOverflows(int a,int b)
+				{
+					return additionSubtractionOverflows(a,b,true);
+				}
+			public:
+			
+			explicit SafeInteger(int value)
+			{
+				internal_value=value;
+			}
+			int getValue() const
+			{
+				return internal_value;
+			}
+			
+			SafeInteger operator -() const
+			{
+				int a=internal_value;
+				
+				if(uint32_t(a)==(uint32_t(1)<<31)) throw string()+"sign change out of range: "+std::to_string(a);
+				int r=-a;
+				
+				return SafeInteger(r);
+			}
+			SafeInteger operator ~() const
+			{
+				int a=internal_value;
+				return SafeInteger(~a);
+			}
+			SafeInteger operator !() const
+			{
+				int a=internal_value;
+				return SafeInteger(!a);
+			}
+			
+			SafeInteger pow(const SafeInteger& integerB) const
+			{
+				int a=internal_value;
+				int b=integerB.internal_value;
+				
+				int r=0;
+				if(a==0 && b<=0) throw string()+"0 to the power of "+std::to_string(b);
+				
+				if(a==1) r=1;
+				else if(a==-1) r=(1-int(uint32_t(b)&1)*2);
+				else if(a!=0 && b>=0)
+				{
+					r=1;
+					for(int i=0;i<b;i++)
+					{
+						if(multiplicationOverflows(r,a)) throw string()+"exponentiation result out of range: "+std::to_string(a)+" and "+std::to_string(b);
+						r*=a;
+					}
+				}
+				
+				return SafeInteger(r);
+			}
+			SafeInteger operator *(const SafeInteger& integerB) const
+			{
+				int a=internal_value;
+				int b=integerB.internal_value;
+				
+				if(multiplicationOverflows(a,b)) throw string()+"multiplication result out of range: "+std::to_string(a)+" and "+std::to_string(b);
+				int r=a*b;
+				
+				return SafeInteger(r);
+			}
+			SafeInteger operator /(const SafeInteger& integerB) const
+			{
+				int a=internal_value;
+				int b=integerB.internal_value;
+				
+				assertDivision(a,b,false);
+				int r=a/b;
+				
+				return SafeInteger(r);
+			}
+			SafeInteger operator %(const SafeInteger& integerB) const
+			{
+				int a=internal_value;
+				int b=integerB.internal_value;
+				
+				assertDivision(a,b,true);
+				int r=a%b;
+				
+				return SafeInteger(r);
+			}
+			SafeInteger operator +(const SafeInteger& integerB) const
+			{
+				int a=internal_value;
+				int b=integerB.internal_value;
+				
+				if(additionOverflows(a,b)) throw string()+"addition overflow: "+std::to_string(a)+" and "+std::to_string(b);
+				int r=a+b;
+				
+				return SafeInteger(r);
+			}
+			SafeInteger operator -(const SafeInteger& integerB) const
+			{
+				int a=internal_value;
+				int b=integerB.internal_value;
+				
+				if(subtractionOverflows(a,b)) throw string()+"subtraction overflow: "+std::to_string(a)+" and "+std::to_string(b);
+				int r=a-b;
+				
+				return SafeInteger(r);
+			}
+			SafeInteger operator <<(const SafeInteger& integerB) const
+			{
+				int a=internal_value;
+				int b=integerB.internal_value;
+				
+				if(b<0) throw string()+"negative bit shift: "+std::to_string(a)+" and "+std::to_string(b);
+				int r= b<32 ? (a>>b) : 0;
+				
+				return SafeInteger(r);
+			}
+			SafeInteger operator >>(const SafeInteger& integerB) const
+			{
+				int a=internal_value;
+				int b=integerB.internal_value;
+				
+				if(b<0) throw string()+"negative bit shift: "+std::to_string(a)+" and "+std::to_string(b);
+				int r= b<32 ? (a>>b) : (a<0 ? -1 : 0);
+				
+				return SafeInteger(r);
+			}
+			SafeInteger shiftRightLogical(const SafeInteger& integerB) const
+			{
+				int a=internal_value;
+				int b=integerB.internal_value;
+				
+				if(b<0) throw string()+"negative bit shift: "+std::to_string(a)+" and "+std::to_string(b);
+				int r= b<32 ? int(uint32_t(a)>>b) : 0;
+				
+				return SafeInteger(r);
+			}
+			SafeInteger operator <(const SafeInteger& integerB) const
+			{
+				int a=internal_value;
+				int b=integerB.internal_value;
+				
+				int r= a<b;
+				
+				return SafeInteger(r);
+			}
+			SafeInteger operator <=(const SafeInteger& integerB) const
+			{
+				int a=internal_value;
+				int b=integerB.internal_value;
+				
+				int r= a<=b;
+				
+				return SafeInteger(r);
+			}
+			SafeInteger operator >(const SafeInteger& integerB) const
+			{
+				int a=internal_value;
+				int b=integerB.internal_value;
+				
+				int r= a>b;
+				
+				return SafeInteger(r);
+			}
+			SafeInteger operator >=(const SafeInteger& integerB) const
+			{
+				int a=internal_value;
+				int b=integerB.internal_value;
+				
+				int r= a>=b;
+				
+				return SafeInteger(r);
+			}
+			SafeInteger operator ==(const SafeInteger& integerB) const
+			{
+				int a=internal_value;
+				int b=integerB.internal_value;
+				
+				int r= a==b;
+				
+				return SafeInteger(r);
+			}
+			SafeInteger operator !=(const SafeInteger& integerB) const
+			{
+				int a=internal_value;
+				int b=integerB.internal_value;
+				
+				int r= a!=b;
+				
+				return SafeInteger(r);
+			}
+			SafeInteger operator &(const SafeInteger& integerB) const
+			{
+				int a=internal_value;
+				int b=integerB.internal_value;
+				
+				int r=uint32_t(a)&uint32_t(b);
+				
+				return SafeInteger(r);
+			}
+			SafeInteger operator ^(const SafeInteger& integerB) const
+			{
+				int a=internal_value;
+				int b=integerB.internal_value;
+				
+				int r=uint32_t(a)^uint32_t(b);
+				
+				return SafeInteger(r);
+			}
+			SafeInteger operator |(const SafeInteger& integerB) const
+			{
+				int a=internal_value;
+				int b=integerB.internal_value;
+				
+				int r=uint32_t(a)|uint32_t(b);
+				
+				return SafeInteger(r);
+			}
+			
+			SafeInteger& operator *=(const SafeInteger& b)
+			{
+				*this=*this*b;
+				return *this;
+			}
+			SafeInteger& operator /=(const SafeInteger& b)
+			{
+				*this=*this/b;
+				return *this;
+			}
+			SafeInteger& operator %=(const SafeInteger& b)
+			{
+				*this=*this%b;
+				return *this;
+			}
+			SafeInteger& operator +=(const SafeInteger& b)
+			{
+				*this=*this+b;
+				return *this;
+			}
+			SafeInteger& operator -=(const SafeInteger& b)
+			{
+				*this=*this-b;
+				return *this;
+			}
+			SafeInteger& operator <<=(const SafeInteger& b)
+			{
+				*this=(*this<<b);
+				return *this;
+			}
+			SafeInteger& operator >>=(const SafeInteger& b)
+			{
+				*this=(*this>>b);
+				return *this;
+			}
+			SafeInteger& operator &=(const SafeInteger& b)
+			{
+				*this=(*this&b);
+				return *this;
+			}
+			SafeInteger& operator ^=(const SafeInteger& b)
+			{
+				*this=(*this^b);
+				return *this;
+			}
+			SafeInteger& operator |=(const SafeInteger& b)
+			{
+				*this=(*this|b);
+				return *this;
+			}
+		};
+	public:
+	
 	class Code
 	{
 		private:
-			class SafeInteger
-			{
-				private:
-					int internal_value=0;
-					
-					static void assertDivision(int dividend,int divisor,bool isModulo)
-					{
-						if(divisor==0 || dividend==int(uint32_t(1)<<31) && divisor==-1)
-						{
-							string operationString= isModulo ? "modulo" : "division";
-							throw string()+operationString+" operation of invalid integers: "+std::to_string(dividend)+" and "+std::to_string(divisor);
-						}
-					}
-					static bool multiplicationOverflows(int a,int b)
-					{
-						uint64_t absA=std::abs(int64_t(a));
-						uint64_t absB=std::abs(int64_t(b));
-						
-						uint64_t absC=absA*absB;
-						
-						if((a<0)!=(b<0) && absC==(uint64_t(1)<<31)) return false;
-						if(absC>=(uint64_t(1)<<31)) return true;
-						return false;
-					}
-					static bool additionOverflows_positiveAddition_bothPositive(uint64_t absA,uint64_t absB)
-					{
-						uint64_t c=absA+absB;
-						return c>=(uint64_t(1)<<31);
-					}
-					static bool additionOverflows_positiveAddition_bothNegative(uint64_t absA,uint64_t absB)
-					{
-						uint64_t c=absA+absB;
-						return c>(uint64_t(1)<<31);
-					}
-					static bool additionOverflows_positiveAddition_aPositive_bNegative(uint64_t absA,uint64_t absB)
-					{
-						uint64_t c=absA-absB;
-						if(c<(uint64_t(1)<<31)) return false;
-						if(-c<=(uint64_t(1)<<31)) return false;
-						return true;
-					}
-					static bool additionSubtractionOverflows(int a,int b,bool isSubtraction)
-					{
-						bool posA= a>=0;
-						bool posB= b>=0;
-						
-						if(isSubtraction) posB=!posB;
-						
-						uint64_t absA=std::abs(int64_t(a));
-						uint64_t absB=std::abs(int64_t(b));
-						
-						if(posA && posB) return additionOverflows_positiveAddition_bothPositive(absA,absB);
-						if(!posA && !posB) return additionOverflows_positiveAddition_bothNegative(absA,absB);
-						if(posA && !posB) return additionOverflows_positiveAddition_aPositive_bNegative(absA,absB);
-						if(!posA && posB) return additionOverflows_positiveAddition_aPositive_bNegative(absB,absA);
-						
-						return false;
-					}
-					static bool additionOverflows(int a,int b)
-					{
-						return additionSubtractionOverflows(a,b,false);
-					}
-					static bool subtractionOverflows(int a,int b)
-					{
-						return additionSubtractionOverflows(a,b,true);
-					}
-				public:
-				
-				explicit SafeInteger(int value)
-				{
-					internal_value=value;
-				}
-				int getValue() const
-				{
-					return internal_value;
-				}
-				
-				SafeInteger operator -() const
-				{
-					int a=internal_value;
-					
-					if(uint32_t(a)==(uint32_t(1)<<31)) throw string()+"sign change out of range: "+std::to_string(a);
-					int r=-a;
-					
-					return SafeInteger(r);
-				}
-				SafeInteger operator ~() const
-				{
-					int a=internal_value;
-					return SafeInteger(~a);
-				}
-				SafeInteger operator !() const
-				{
-					int a=internal_value;
-					return SafeInteger(!a);
-				}
-				
-				SafeInteger pow(const SafeInteger& integerB) const
-				{
-					int a=internal_value;
-					int b=integerB.internal_value;
-					
-					int r=0;
-					if(a==0 && b<=0) throw string()+"0 to the power of "+std::to_string(b);
-					
-					if(a==1) r=1;
-					else if(a==-1) r=(1-int(uint32_t(b)&1)*2);
-					else if(a!=0 && b>=0)
-					{
-						r=1;
-						for(int i=0;i<b;i++)
-						{
-							if(multiplicationOverflows(r,a)) throw string()+"exponentiation result out of range: "+std::to_string(a)+" and "+std::to_string(b);
-							r*=a;
-						}
-					}
-					
-					return SafeInteger(r);
-				}
-				SafeInteger operator *(const SafeInteger& integerB) const
-				{
-					int a=internal_value;
-					int b=integerB.internal_value;
-					
-					if(multiplicationOverflows(a,b)) throw string()+"multiplication result out of range: "+std::to_string(a)+" and "+std::to_string(b);
-					int r=a*b;
-					
-					return SafeInteger(r);
-				}
-				SafeInteger operator /(const SafeInteger& integerB) const
-				{
-					int a=internal_value;
-					int b=integerB.internal_value;
-					
-					assertDivision(a,b,false);
-					int r=a/b;
-					
-					return SafeInteger(r);
-				}
-				SafeInteger operator %(const SafeInteger& integerB) const
-				{
-					int a=internal_value;
-					int b=integerB.internal_value;
-					
-					assertDivision(a,b,true);
-					int r=a%b;
-					
-					return SafeInteger(r);
-				}
-				SafeInteger operator +(const SafeInteger& integerB) const
-				{
-					int a=internal_value;
-					int b=integerB.internal_value;
-					
-					if(additionOverflows(a,b)) throw string()+"addition overflow: "+std::to_string(a)+" and "+std::to_string(b);
-					int r=a+b;
-					
-					return SafeInteger(r);
-				}
-				SafeInteger operator -(const SafeInteger& integerB) const
-				{
-					int a=internal_value;
-					int b=integerB.internal_value;
-					
-					if(subtractionOverflows(a,b)) throw string()+"subtraction overflow: "+std::to_string(a)+" and "+std::to_string(b);
-					int r=a-b;
-					
-					return SafeInteger(r);
-				}
-				SafeInteger operator <<(const SafeInteger& integerB) const
-				{
-					int a=internal_value;
-					int b=integerB.internal_value;
-					
-					if(b<0) throw string()+"negative bit shift: "+std::to_string(a)+" and "+std::to_string(b);
-					int r= b<32 ? (a>>b) : 0;
-					
-					return SafeInteger(r);
-				}
-				SafeInteger operator >>(const SafeInteger& integerB) const
-				{
-					int a=internal_value;
-					int b=integerB.internal_value;
-					
-					if(b<0) throw string()+"negative bit shift: "+std::to_string(a)+" and "+std::to_string(b);
-					int r= b<32 ? (a>>b) : (a<0 ? -1 : 0);
-					
-					return SafeInteger(r);
-				}
-				SafeInteger shiftRightLogical(const SafeInteger& integerB) const
-				{
-					int a=internal_value;
-					int b=integerB.internal_value;
-					
-					if(b<0) throw string()+"negative bit shift: "+std::to_string(a)+" and "+std::to_string(b);
-					int r= b<32 ? int(uint32_t(a)>>b) : 0;
-					
-					return SafeInteger(r);
-				}
-				SafeInteger operator <(const SafeInteger& integerB) const
-				{
-					int a=internal_value;
-					int b=integerB.internal_value;
-					
-					int r= a<b;
-					
-					return SafeInteger(r);
-				}
-				SafeInteger operator <=(const SafeInteger& integerB) const
-				{
-					int a=internal_value;
-					int b=integerB.internal_value;
-					
-					int r= a<=b;
-					
-					return SafeInteger(r);
-				}
-				SafeInteger operator >(const SafeInteger& integerB) const
-				{
-					int a=internal_value;
-					int b=integerB.internal_value;
-					
-					int r= a>b;
-					
-					return SafeInteger(r);
-				}
-				SafeInteger operator >=(const SafeInteger& integerB) const
-				{
-					int a=internal_value;
-					int b=integerB.internal_value;
-					
-					int r= a>=b;
-					
-					return SafeInteger(r);
-				}
-				SafeInteger operator ==(const SafeInteger& integerB) const
-				{
-					int a=internal_value;
-					int b=integerB.internal_value;
-					
-					int r= a==b;
-					
-					return SafeInteger(r);
-				}
-				SafeInteger operator !=(const SafeInteger& integerB) const
-				{
-					int a=internal_value;
-					int b=integerB.internal_value;
-					
-					int r= a!=b;
-					
-					return SafeInteger(r);
-				}
-				SafeInteger operator &(const SafeInteger& integerB) const
-				{
-					int a=internal_value;
-					int b=integerB.internal_value;
-					
-					int r=uint32_t(a)&uint32_t(b);
-					
-					return SafeInteger(r);
-				}
-				SafeInteger operator ^(const SafeInteger& integerB) const
-				{
-					int a=internal_value;
-					int b=integerB.internal_value;
-					
-					int r=uint32_t(a)^uint32_t(b);
-					
-					return SafeInteger(r);
-				}
-				SafeInteger operator |(const SafeInteger& integerB) const
-				{
-					int a=internal_value;
-					int b=integerB.internal_value;
-					
-					int r=uint32_t(a)|uint32_t(b);
-					
-					return SafeInteger(r);
-				}
-				
-				SafeInteger& operator *=(const SafeInteger& b)
-				{
-					*this=*this*b;
-					return *this;
-				}
-				SafeInteger& operator /=(const SafeInteger& b)
-				{
-					*this=*this/b;
-					return *this;
-				}
-				SafeInteger& operator %=(const SafeInteger& b)
-				{
-					*this=*this%b;
-					return *this;
-				}
-				SafeInteger& operator +=(const SafeInteger& b)
-				{
-					*this=*this+b;
-					return *this;
-				}
-				SafeInteger& operator -=(const SafeInteger& b)
-				{
-					*this=*this-b;
-					return *this;
-				}
-				SafeInteger& operator <<=(const SafeInteger& b)
-				{
-					*this=(*this<<b);
-					return *this;
-				}
-				SafeInteger& operator >>=(const SafeInteger& b)
-				{
-					*this=(*this>>b);
-					return *this;
-				}
-				SafeInteger& operator &=(const SafeInteger& b)
-				{
-					*this=(*this&b);
-					return *this;
-				}
-				SafeInteger& operator ^=(const SafeInteger& b)
-				{
-					*this=(*this^b);
-					return *this;
-				}
-				SafeInteger& operator |=(const SafeInteger& b)
-				{
-					*this=(*this|b);
-					return *this;
-				}
-			};
-			
 			template <class T>
 			class Container
 			{
@@ -949,7 +1205,7 @@ class ComputerBuilder
 			vector<InputOrOutputInfo> inputs;
 			vector<InputOrOutputInfo> outputs;
 			
-			vector<Variable> variables;
+			NamedVector<Variable> variables;
 			
 			vector<Element> elements;
 			
@@ -1099,6 +1355,13 @@ class ComputerBuilder
 				{
 					if(v[i].name==name) return i;
 				}
+				return -1;
+			}
+			template<class T>
+			static int findWithName(NamedVector<T>& v,const string& name)
+			{
+				size_t index=v.find(name);
+				if(index!=NamedVector<T>::npos) return index;
 				return -1;
 			}
 			static bool stringToIntSimple(const string& str,int& value)
@@ -2755,12 +3018,12 @@ class ComputerBuilder
 					{
 						public:
 						
-						vector<Component::Variable> variables;
+						NamedVector<Component::Variable>*variablesPtr=nullptr;
 						
 						ParserContext(){}
-						explicit ParserContext(const vector<Component::Variable>& _variables)
+						explicit ParserContext(NamedVector<Component::Variable>& _variables)
 						{
-							variables=_variables;
+							variablesPtr=&_variables;
 						}
 					};
 					
@@ -2820,10 +3083,15 @@ class ComputerBuilder
 									}
 									else
 									{
-										int variableIndex=findWithName(context.variables,token);
+										if(context.variablesPtr==nullptr)
+										{
+											throw string()+"Internal error: the pointer to the variables is null";
+										}
+										
+										int variableIndex=findWithName(*context.variablesPtr,token);
 										if(variableIndex==-1) throw string()+"variable named '"+token+"' not found";
 										
-										const Component::Variable& variable=context.variables[variableIndex];
+										const Component::Variable& variable=(*context.variablesPtr)[variableIndex];
 										if(variable.type==Component::Variable::Type::output)
 										{
 											throw string()+"reading from output variable: '"+token+"'";
@@ -2886,7 +3154,7 @@ class ComputerBuilder
 							expressionEvaluator.setBracketOperators(bracketOperators);
 						}
 						
-						InputExpression evaluate(const string& expressionString,const vector<Component::Variable>& variables)
+						InputExpression evaluate(const string& expressionString,NamedVector<Component::Variable>& variables)
 						{
 							ParserContext context(variables);
 							return expressionEvaluator.evaluate(expressionString,context);
@@ -3061,7 +3329,7 @@ class ComputerBuilder
 					}
 				}
 				
-				InputExpression parse(const string& expressionString,const vector<Component::Variable>& variables,int expectedSize)
+				InputExpression parse(const string& expressionString,NamedVector<Component::Variable>& variables,int expectedSize)
 				{
 					InputExpression expression=parser.evaluate(expressionString,variables);
 					
@@ -3116,7 +3384,7 @@ class ComputerBuilder
 			
 			InputExpressionEvaluator inputExpressionEvaluator;
 			
-			InputExpression parseInputExpression(const string& expressionString,const vector<Component::Variable>& variables,int expectedSize,int lineIndex)
+			InputExpression parseInputExpression(const string& expressionString,NamedVector<Component::Variable>& variables,int expectedSize,int lineIndex)
 			{
 				try
 				{
@@ -3840,7 +4108,7 @@ class ComputerBuilder
 					
 					for(int v=0;v<component.variables.size();v++)
 					{
-						Component::Variable& variable=component.variables[v];
+						const Component::Variable& variable=component.variables[v];
 						
 						if(variable.type==Component::Variable::Type::output || variable.type==Component::Variable::Type::reg)
 						{
@@ -3936,8 +4204,8 @@ class ComputerBuilder
 			{
 				public:
 				
-				vector<ComputerData::Input> computerInputs;
-				vector<ComputerData::Input> computerMemoryInputs;
+				vector<ComputerData::Pointer> computerInputs;
+				vector<ComputerData::Pointer> computerMemoryInputs;
 			};
 			
 			class ComponentContext
@@ -3946,16 +4214,16 @@ class ComputerBuilder
 				
 				int level=0;
 				
-				vector<vector<ComputerData::Input>> inputs;
+				vector<vector<ComputerData::Pointer>> inputs;
 				
-				vector<vector<ComputerData::Input>> outputs;
+				vector<vector<ComputerData::Pointer>> outputs;
 				
 				vector<VariableData> variables;
 				
 				vector<int> lineIndexes;
 				
 				ComponentContext(){}
-				ComponentContext(const ComponentContext& parent,const vector<vector<ComputerData::Input>>& _inputs,int elementLineIndex)
+				ComponentContext(const ComponentContext& parent,const vector<vector<ComputerData::Pointer>>& _inputs,int elementLineIndex)
 				{
 					level=parent.level+1;
 					
@@ -3966,10 +4234,10 @@ class ComputerBuilder
 				}
 			};
 			
-			vector<ComputerData::Input> getComputerInputs(const Component& component,const ComponentContext& context,
+			vector<ComputerData::Pointer> getComputerInputs(const Component& component,const ComponentContext& context,
 				const Component::Element& element,const Component::Element::Input& elementInput)
 			{
-				vector<ComputerData::Input> computerInputs;
+				vector<ComputerData::Pointer> computerInputs;
 				
 				InputExpressionEvaluator::BitOriginVector bitOriginVector=evaluateInputExpression(elementInput.expression.get(),element.lineIndex);
 				
@@ -3980,7 +4248,7 @@ class ComputerBuilder
 					if(bitOrigin.type==InputExpressionEvaluator::BitOrigin::Type::constant)
 					{
 						int bit=(uint32_t(bitOrigin.constantValue))&1;
-						computerInputs.emplace_back(ComputerData::Input::Type::constant,bit);
+						computerInputs.emplace_back(ComputerData::Pointer::Type::constant,bit);
 					}
 					else if(bitOrigin.type==InputExpressionEvaluator::BitOrigin::Type::variable)
 					{
@@ -4001,14 +4269,14 @@ class ComputerBuilder
 				return computerInputs;
 			}
 			
-			void setVariableInputs(ComputerData& computer,ComponentContext& context,int variableIndex,const vector<ComputerData::Input>& inputs)
+			void setVariableInputs(ComputerData& computer,ComponentContext& context,int variableIndex,const vector<ComputerData::Pointer>& inputs)
 			{
-				vector<ComputerData::Input>& computerInputs=context.variables[variableIndex].computerInputs;
+				vector<ComputerData::Pointer>& computerInputs=context.variables[variableIndex].computerInputs;
 				for(int i=0;i<computerInputs.size();i++)
 				{
-					ComputerData::Input& input=computerInputs[i];
+					ComputerData::Pointer& input=computerInputs[i];
 					
-					if(input.type==ComputerData::Input::Type::yesGate)
+					if(input.type==ComputerData::Pointer::Type::yesGate)
 					{
 						computer.setYesGateInput(input.index,inputs[i]);
 					}
@@ -4033,20 +4301,20 @@ class ComputerBuilder
 				
 				for(int i=0,inputIndex=0;i<component.variables.size();i++)
 				{
-					Component::Variable& variable=component.variables[i];
+					const Component::Variable& variable=component.variables[i];
 					
 					{
 						VariableData variableData;
 						for(int j=0;j<variable.sizeInBits;j++)
 						{
-							variableData.computerInputs.emplace_back(ComputerData::Input::Type::yesGate,computer.addYesGate(ComputerData::YesGate()));
+							variableData.computerInputs.emplace_back(ComputerData::Pointer::Type::yesGate,computer.addYesGate(ComputerData::YesGate()));
 						}
 						context.variables.push_back(variableData);
 					}
 					
 					if(variable.type==Component::Variable::Type::input)
 					{
-						vector<ComputerData::Input> inputs;
+						vector<ComputerData::Pointer> inputs;
 						
 						if(context.level==0)
 						{
@@ -4054,7 +4322,7 @@ class ComputerBuilder
 							
 							for(int j=0;j<variable.sizeInBits;j++)
 							{
-								inputs.emplace_back(ComputerData::Input::Type::computerInput,index+j);
+								inputs.emplace_back(ComputerData::Pointer::Type::input,index+j);
 							}
 						}
 						else
@@ -4068,12 +4336,12 @@ class ComputerBuilder
 					}
 					else if(variable.type==Component::Variable::Type::reg)
 					{
-						vector<ComputerData::Input> inputs;
+						vector<ComputerData::Pointer> inputs;
 						
 						for(int j=0;j<variable.sizeInBits;j++)
 						{
-							int index=computer.addMemory(ComputerData::Input());
-							inputs.emplace_back(ComputerData::Input::Type::computerMemory,index);
+							int index=computer.addMemory(ComputerData::Pointer());
+							inputs.emplace_back(ComputerData::Pointer::Type::memory,index);
 						}
 						
 						context.variables[i].computerMemoryInputs=inputs;
@@ -4086,10 +4354,10 @@ class ComputerBuilder
 					
 					if(element.type==Component::Element::Type::nand)
 					{
-						vector<ComputerData::Input> inputsA=getComputerInputs(component,context,element,element.inputs[0]);
-						vector<ComputerData::Input> inputsB=getComputerInputs(component,context,element,element.inputs[1]);
+						vector<ComputerData::Pointer> inputsA=getComputerInputs(component,context,element,element.inputs[0]);
+						vector<ComputerData::Pointer> inputsB=getComputerInputs(component,context,element,element.inputs[1]);
 						
-						vector<ComputerData::Input> inputsC;
+						vector<ComputerData::Pointer> inputsC;
 						
 						vector<int> lineIndexes=context.lineIndexes;
 						lineIndexes.push_back(element.lineIndex);
@@ -4098,7 +4366,7 @@ class ComputerBuilder
 						{
 							int nandGateIndex=computer.addNandGate(ComputerData::NandGate(inputsA[i],inputsB[i]));
 							
-							inputsC.emplace_back(ComputerData::Input::Type::nandGate,nandGateIndex);
+							inputsC.emplace_back(ComputerData::Pointer::Type::nandGate,nandGateIndex);
 							
 							addLineIndexesToNandGate(computer,nandGateIndex,lineIndexes);
 						}
@@ -4107,16 +4375,16 @@ class ComputerBuilder
 					}
 					else if(element.type==Component::Element::Type::set)
 					{
-						vector<ComputerData::Input> inputs=getComputerInputs(component,context,element,element.inputs[0]);
+						vector<ComputerData::Pointer> inputs=getComputerInputs(component,context,element,element.inputs[0]);
 						
 						setVariableInputs(computer,context,element.outputs[0].variableIndex,inputs);
 					}
 					else if(element.type==Component::Element::Type::concat)
 					{
-						vector<ComputerData::Input> inputsA=getComputerInputs(component,context,element,element.inputs[0]);
-						vector<ComputerData::Input> inputsB=getComputerInputs(component,context,element,element.inputs[1]);
+						vector<ComputerData::Pointer> inputsA=getComputerInputs(component,context,element,element.inputs[0]);
+						vector<ComputerData::Pointer> inputsB=getComputerInputs(component,context,element,element.inputs[1]);
 						
-						vector<ComputerData::Input> inputsC;
+						vector<ComputerData::Pointer> inputsC;
 						
 						int inputsAwidth=inputsA.size()/element.numberOfInstances;
 						int inputsBwidth=inputsB.size()/element.numberOfInstances;
@@ -4130,20 +4398,20 @@ class ComputerBuilder
 					}
 					else if(element.type==Component::Element::Type::component)
 					{
-						vector<vector<ComputerData::Input>> inputs;
+						vector<vector<ComputerData::Pointer>> inputs;
 						for(int i=0;i<element.inputs.size();i++)
 						{
 							inputs.push_back(getComputerInputs(component,context,element,element.inputs[i]));
 						}
 						
-						vector<vector<ComputerData::Input>> outputs(element.outputs.size());
+						vector<vector<ComputerData::Pointer>> outputs(element.outputs.size());
 						
 						for(int i=0;i<element.numberOfInstances;i++)
 						{
-							vector<vector<ComputerData::Input>> instanceInputs(inputs.size());
+							vector<vector<ComputerData::Pointer>> instanceInputs(inputs.size());
 							for(int j=0;j<inputs.size();j++)
 							{
-								instanceInputs[j]=vector<ComputerData::Input>(
+								instanceInputs[j]=vector<ComputerData::Pointer>(
 									inputs[j].begin()+i*(inputs[j].size()/element.numberOfInstances),
 									inputs[j].begin()+(i+1)*(inputs[j].size()/element.numberOfInstances)
 									);
@@ -4168,7 +4436,7 @@ class ComputerBuilder
 				
 				for(int i=0;i<component.variables.size();i++)
 				{
-					Component::Variable& variable=component.variables[i];
+					const Component::Variable& variable=component.variables[i];
 					
 					if(variable.type==Component::Variable::Type::reg)
 					{
@@ -4179,7 +4447,7 @@ class ComputerBuilder
 					}
 					else if(variable.type==Component::Variable::Type::output)
 					{
-						vector<ComputerData::Input> inputs=context.variables[i].computerInputs;
+						vector<ComputerData::Pointer> inputs=context.variables[i].computerInputs;
 						
 						if(context.level==0)
 						{
@@ -4193,9 +4461,9 @@ class ComputerBuilder
 					}
 				}
 			}
-			void redirectThroughYesGates(const ComputerData& computer,ComputerData::Input& input)
+			void redirectThroughYesGates(const ComputerData& computer,ComputerData::Pointer& input)
 			{
-				while(input.type==ComputerData::Input::Type::yesGate)
+				while(input.type==ComputerData::Pointer::Type::yesGate)
 				{
 					const ComputerData::YesGate& yesGate=computer.yesGates[input.index];
 					if(!yesGate.inputResolved)
@@ -4235,11 +4503,11 @@ class ComputerBuilder
 						if(orderOldToNew[i]==-1)
 						{
 							ComputerData::NandGate& nandGate=computer.nandGates[i];
-							if(nandGate.inputA.type==ComputerData::Input::Type::nandGate)
+							if(nandGate.inputA.type==ComputerData::Pointer::Type::nandGate)
 							{
 								if(orderOldToNew[nandGate.inputA.index]==-1) continue;
 							}
-							if(nandGate.inputB.type==ComputerData::Input::Type::nandGate)
+							if(nandGate.inputB.type==ComputerData::Pointer::Type::nandGate)
 							{
 								if(orderOldToNew[nandGate.inputB.index]==-1) continue;
 							}
@@ -4357,11 +4625,11 @@ class ComputerBuilder
 				{
 					ComputerData::NandGate nandGate=computer.nandGates[orderNewToOld[i]];
 					
-					if(nandGate.inputA.type==ComputerData::Input::Type::nandGate)
+					if(nandGate.inputA.type==ComputerData::Pointer::Type::nandGate)
 					{
 						nandGate.inputA.index=orderOldToNew[nandGate.inputA.index];
 					}
-					if(nandGate.inputB.type==ComputerData::Input::Type::nandGate)
+					if(nandGate.inputB.type==ComputerData::Pointer::Type::nandGate)
 					{
 						nandGate.inputB.index=orderOldToNew[nandGate.inputB.index];
 					}
@@ -4375,7 +4643,7 @@ class ComputerBuilder
 				{
 					ComputerData::OutputGate& memory=computer.memory[i];
 					
-					if(memory.input.type==ComputerData::Input::Type::nandGate)
+					if(memory.input.type==ComputerData::Pointer::Type::nandGate)
 					{
 						memory.input.index=orderOldToNew[memory.input.index];
 					}
@@ -4384,7 +4652,7 @@ class ComputerBuilder
 				{
 					ComputerData::OutputGate& output=computer.outputs[i];
 					
-					if(output.input.type==ComputerData::Input::Type::nandGate)
+					if(output.input.type==ComputerData::Pointer::Type::nandGate)
 					{
 						output.input.index=orderOldToNew[output.input.index];
 					}
@@ -4397,7 +4665,7 @@ class ComputerBuilder
 				{
 					ComputerData::OutputGate memory=computer.memory[orderNewToOld[i]];
 					
-					if(memory.input.type==ComputerData::Input::Type::computerMemory)
+					if(memory.input.type==ComputerData::Pointer::Type::memory)
 					{
 						memory.input.index=orderOldToNew[memory.input.index];
 					}
@@ -4411,11 +4679,11 @@ class ComputerBuilder
 				{
 					ComputerData::NandGate& nandGate=computer.nandGates[i];
 					
-					if(nandGate.inputA.type==ComputerData::Input::Type::computerMemory)
+					if(nandGate.inputA.type==ComputerData::Pointer::Type::memory)
 					{
 						nandGate.inputA.index=orderOldToNew[nandGate.inputA.index];
 					}
-					if(nandGate.inputB.type==ComputerData::Input::Type::computerMemory)
+					if(nandGate.inputB.type==ComputerData::Pointer::Type::memory)
 					{
 						nandGate.inputB.index=orderOldToNew[nandGate.inputB.index];
 					}
@@ -4424,167 +4692,171 @@ class ComputerBuilder
 				{
 					ComputerData::OutputGate& output=computer.outputs[i];
 					
-					if(output.input.type==ComputerData::Input::Type::computerMemory)
+					if(output.input.type==ComputerData::Pointer::Type::memory)
 					{
 						output.input.index=orderOldToNew[output.input.index];
 					}
 				}
 			}
-			static int pruneUnusedNandGates(ComputerData& computer)
+		public:
+		
+		static int pruneUnusedNandGates(ComputerData& computer)
+		{
+			vector<int> used(computer.nandGates.size(),false);
+			int usedCount=0;
+			
+			for(int i=0;i<computer.memory.size();i++)
 			{
-				vector<int> used(computer.nandGates.size(),false);
-				int usedCount=0;
+				ComputerData::OutputGate& memory=computer.memory[i];
 				
-				for(int i=0;i<computer.memory.size();i++)
+				if(memory.input.type==ComputerData::Pointer::Type::nandGate)
 				{
-					ComputerData::OutputGate& memory=computer.memory[i];
-					
-					if(memory.input.type==ComputerData::Input::Type::nandGate)
+					int index=memory.input.index;
+					if(!used[index])
 					{
-						int index=memory.input.index;
-						if(!used[index])
-						{
-							used[index]=true;
-							usedCount++;
-						}
+						used[index]=true;
+						usedCount++;
 					}
 				}
-				for(int i=0;i<computer.outputs.size();i++)
-				{
-					ComputerData::OutputGate& output=computer.outputs[i];
-					
-					if(output.input.type==ComputerData::Input::Type::nandGate)
-					{
-						int index=output.input.index;
-						if(!used[index])
-						{
-							used[index]=true;
-							usedCount++;
-						}
-					}
-				}
-				
-				while(usedCount<used.size())
-				{
-					int usedCountOld=usedCount;
-					
-					for(int i=0;i<computer.nandGates.size();i++)
-					{
-						if(used[i])
-						{
-							ComputerData::NandGate& nandGate=computer.nandGates[i];
-							if(nandGate.inputA.type==ComputerData::Input::Type::nandGate)
-							{
-								int index=nandGate.inputA.index;
-								if(!used[index])
-								{
-									used[index]=true;
-									usedCount++;
-								}
-							}
-							if(nandGate.inputB.type==ComputerData::Input::Type::nandGate)
-							{
-								int index=nandGate.inputB.index;
-								if(!used[index])
-								{
-									used[index]=true;
-									usedCount++;
-								}
-							}
-						}
-					}
-					
-					if(usedCount==usedCountOld) break;
-				}
-				
-				vector<int> orderNewToOld(usedCount);
-				vector<int> orderOldToNew(used.size());
-				for(int i=0,count=0;i<used.size();i++)
-				{
-					if(used[i])
-					{
-						orderOldToNew[i]=count;
-						orderNewToOld[count]=i;
-						count++;
-					}
-				}
-				
-				reorderNandGates(computer,orderNewToOld,orderOldToNew);
-				
-				return used.size()-usedCount;
 			}
-			static int pruneUnusedMemory(ComputerData& computer)
+			for(int i=0;i<computer.outputs.size();i++)
 			{
-				vector<int> used(computer.memory.size(),false);
-				int usedCount=0;
+				ComputerData::OutputGate& output=computer.outputs[i];
 				
-				for(int i=0;i<computer.memory.size();i++)
+				if(output.input.type==ComputerData::Pointer::Type::nandGate)
 				{
-					ComputerData::OutputGate& memory=computer.memory[i];
-					
-					if(memory.input.type==ComputerData::Input::Type::computerMemory)
+					int index=output.input.index;
+					if(!used[index])
 					{
-						int index=memory.input.index;
-						if(!used[index])
-						{
-							used[index]=true;
-							usedCount++;
-						}
+						used[index]=true;
+						usedCount++;
 					}
 				}
-				for(int i=0;i<computer.outputs.size();i++)
-				{
-					ComputerData::OutputGate& output=computer.outputs[i];
-					
-					if(output.input.type==ComputerData::Input::Type::computerMemory)
-					{
-						int index=output.input.index;
-						if(!used[index])
-						{
-							used[index]=true;
-							usedCount++;
-						}
-					}
-				}
+			}
+			
+			while(usedCount<used.size())
+			{
+				int usedCountOld=usedCount;
+				
 				for(int i=0;i<computer.nandGates.size();i++)
 				{
-					ComputerData::NandGate& nandGate=computer.nandGates[i];
-					if(nandGate.inputA.type==ComputerData::Input::Type::computerMemory)
-					{
-						int index=nandGate.inputA.index;
-						if(!used[index])
-						{
-							used[index]=true;
-							usedCount++;
-						}
-					}
-					if(nandGate.inputB.type==ComputerData::Input::Type::computerMemory)
-					{
-						int index=nandGate.inputB.index;
-						if(!used[index])
-						{
-							used[index]=true;
-							usedCount++;
-						}
-					}
-				}
-				
-				vector<int> orderNewToOld(usedCount);
-				vector<int> orderOldToNew(used.size());
-				for(int i=0,count=0;i<used.size();i++)
-				{
 					if(used[i])
 					{
-						orderOldToNew[i]=count;
-						orderNewToOld[count]=i;
-						count++;
+						ComputerData::NandGate& nandGate=computer.nandGates[i];
+						if(nandGate.inputA.type==ComputerData::Pointer::Type::nandGate)
+						{
+							int index=nandGate.inputA.index;
+							if(!used[index])
+							{
+								used[index]=true;
+								usedCount++;
+							}
+						}
+						if(nandGate.inputB.type==ComputerData::Pointer::Type::nandGate)
+						{
+							int index=nandGate.inputB.index;
+							if(!used[index])
+							{
+								used[index]=true;
+								usedCount++;
+							}
+						}
 					}
 				}
 				
-				reorderMemory(computer,orderNewToOld,orderOldToNew);
-				
-				return used.size()-usedCount;
+				if(usedCount==usedCountOld) break;
 			}
+			
+			vector<int> orderNewToOld(usedCount);
+			vector<int> orderOldToNew(used.size());
+			for(int i=0,count=0;i<used.size();i++)
+			{
+				if(used[i])
+				{
+					orderOldToNew[i]=count;
+					orderNewToOld[count]=i;
+					count++;
+				}
+			}
+			
+			reorderNandGates(computer,orderNewToOld,orderOldToNew);
+			
+			return used.size()-usedCount;
+		}
+		static int pruneUnusedMemory(ComputerData& computer)
+		{
+			vector<int> used(computer.memory.size(),false);
+			int usedCount=0;
+			
+			for(int i=0;i<computer.memory.size();i++)
+			{
+				ComputerData::OutputGate& memory=computer.memory[i];
+				
+				if(memory.input.type==ComputerData::Pointer::Type::memory)
+				{
+					int index=memory.input.index;
+					if(!used[index])
+					{
+						used[index]=true;
+						usedCount++;
+					}
+				}
+			}
+			for(int i=0;i<computer.outputs.size();i++)
+			{
+				ComputerData::OutputGate& output=computer.outputs[i];
+				
+				if(output.input.type==ComputerData::Pointer::Type::memory)
+				{
+					int index=output.input.index;
+					if(!used[index])
+					{
+						used[index]=true;
+						usedCount++;
+					}
+				}
+			}
+			for(int i=0;i<computer.nandGates.size();i++)
+			{
+				ComputerData::NandGate& nandGate=computer.nandGates[i];
+				if(nandGate.inputA.type==ComputerData::Pointer::Type::memory)
+				{
+					int index=nandGate.inputA.index;
+					if(!used[index])
+					{
+						used[index]=true;
+						usedCount++;
+					}
+				}
+				if(nandGate.inputB.type==ComputerData::Pointer::Type::memory)
+				{
+					int index=nandGate.inputB.index;
+					if(!used[index])
+					{
+						used[index]=true;
+						usedCount++;
+					}
+				}
+			}
+			
+			vector<int> orderNewToOld(usedCount);
+			vector<int> orderOldToNew(used.size());
+			for(int i=0,count=0;i<used.size();i++)
+			{
+				if(used[i])
+				{
+					orderOldToNew[i]=count;
+					orderNewToOld[count]=i;
+					count++;
+				}
+			}
+			
+			reorderMemory(computer,orderNewToOld,orderOldToNew);
+			
+			return used.size()-usedCount;
+		}
+		
+		private:
 			void compileComponents(ComputerData& computer,const string& mainComponentName="main")
 			{
 				int mainComponentIndex=findWithName(components,mainComponentName);
@@ -4656,11 +4928,11 @@ class ComputerBuilder
 							{
 								vector<vector<ComputerData::Pointer>>*vectorPtr=nullptr;
 								
-								if(component.type==ComputerData::Pointer::Type::computerInput)
+								if(component.type==ComputerData::Pointer::Type::input)
 								{
 									vectorPtr=&inputs;
 								}
-								else if(component.type==ComputerData::Pointer::Type::computerMemory)
+								else if(component.type==ComputerData::Pointer::Type::memory)
 								{
 									vectorPtr=&memory;
 								}
@@ -4701,7 +4973,7 @@ class ComputerBuilder
 						}
 						void change(const ConnectionChange& connectionChange)
 						{
-							if(connectionChange.outputComponent.type!=ComputerData::Pointer::Type::computerMemory)
+							if(connectionChange.outputComponent.type!=ComputerData::Pointer::Type::memory)
 							{
 								if(connectionChange.newInputComponent==connectionChange.outputComponent
 									|| connectionChange.oldInputComponent==connectionChange.outputComponent) throw string()+"Input and output are the same component";
@@ -4729,11 +5001,11 @@ class ComputerBuilder
 							vector<ComputerData::Pointer> outputComponents;
 							for(int i=0;i<computer.outputs.size();i++)
 							{
-								outputComponents.emplace_back(ComputerData::Pointer::Type::computerOutput,i);
+								outputComponents.emplace_back(ComputerData::Pointer::Type::output,i);
 							}
 							for(int i=0;i<computer.memory.size();i++)
 							{
-								outputComponents.emplace_back(ComputerData::Pointer::Type::computerMemory,i);
+								outputComponents.emplace_back(ComputerData::Pointer::Type::memory,i);
 							}
 							for(int i=0;i<computer.nandGates.size();i++)
 							{
@@ -4757,11 +5029,11 @@ class ComputerBuilder
 							vector<ComputerData::Pointer> pointers;
 							for(int i=0;i<inputs.size();i++)
 							{
-								pointers.emplace_back(ComputerData::Pointer::Type::computerInput,i);
+								pointers.emplace_back(ComputerData::Pointer::Type::input,i);
 							}
 							for(int i=0;i<memory.size();i++)
 							{
-								pointers.emplace_back(ComputerData::Pointer::Type::computerMemory,i);
+								pointers.emplace_back(ComputerData::Pointer::Type::memory,i);
 							}
 							for(int i=0;i<nandGates.size();i++)
 							{
@@ -4904,7 +5176,11 @@ class ComputerBuilder
 									{
 										return internal_size;
 									}
-									inline T& operator [](size_t index) const
+									inline T& operator [](size_t index)
+									{
+										return internal_elementPtr[index];
+									}
+									inline const T& operator [](size_t index) const
 									{
 										return internal_elementPtr[index];
 									}
@@ -5029,7 +5305,7 @@ class ComputerBuilder
 									vector<ComputerData::Pointer> outputResult=vector<ComputerData::Pointer>(output);
 									for(int i=0;i<outputResult.size();i++)
 									{
-										if(outputResult[i].type!=ComputerData::Pointer::Type::computerOutput)
+										if(outputResult[i].type!=ComputerData::Pointer::Type::output)
 										{
 											outputResult[i]=ComputerData::Pointer();
 										}
@@ -5049,7 +5325,7 @@ class ComputerBuilder
 									vector<ComputerData::Pointer> boundOutput=vector<ComputerData::Pointer>(output);
 									for(int i=0;i<boundOutput.size();i++)
 									{
-										if(boundOutput[i].type==ComputerData::Pointer::Type::computerOutput)
+										if(boundOutput[i].type==ComputerData::Pointer::Type::output)
 										{
 											boundOutput[i]=ComputerData::Pointer();
 										}
@@ -5084,7 +5360,7 @@ class ComputerBuilder
 								{
 									if(checkInRange)
 									{
-										if(outputPointerInPattern.type!=ComputerData::Pointer::Type::computerOutput) return false;
+										if(outputPointerInPattern.type!=ComputerData::Pointer::Type::output) return false;
 										if(!isInRange(outputPointerInPattern)) return false;
 									}
 									
@@ -5100,7 +5376,7 @@ class ComputerBuilder
 								{
 									if(checkInRange)
 									{
-										if(outputPointerInPattern.type!=ComputerData::Pointer::Type::computerOutput)
+										if(outputPointerInPattern.type!=ComputerData::Pointer::Type::output)
 										{
 											return ComputerData::Pointer();
 										}
@@ -5108,7 +5384,7 @@ class ComputerBuilder
 										if(!isInRange(outputPointerInPattern)) return ComputerData::Pointer();
 									}
 									
-									if(output[outputPointerInPattern.index].type==ComputerData::Pointer::Type::computerOutput)
+									if(output[outputPointerInPattern.index].type==ComputerData::Pointer::Type::output)
 									{
 										return ComputerData::Pointer();
 									}
@@ -5153,15 +5429,15 @@ class ComputerBuilder
 								private:
 									PointerSlice*getVectorPtr(const ComputerData::Pointer& pointer)
 									{
-										if(pointer.type==ComputerData::Pointer::Type::computerInput)
+										if(pointer.type==ComputerData::Pointer::Type::input)
 										{
 											return &input;
 										}
-										else if(pointer.type==ComputerData::Pointer::Type::computerOutput)
+										else if(pointer.type==ComputerData::Pointer::Type::output)
 										{
 											return &output;
 										}
-										else if(pointer.type==ComputerData::Pointer::Type::computerMemory)
+										else if(pointer.type==ComputerData::Pointer::Type::memory)
 										{
 											return &memory;
 										}
@@ -5355,7 +5631,7 @@ class ComputerBuilder
 							{
 								if(numberOfCombinations>maxCombinations)
 								{
-									addToMessageQueue("Too many combinations",
+									addToMessageQueue("Too many combinations",true,
 										string()+"Too many combinations ("+std::to_string(numberOfCombinations)+">"+std::to_string(maxCombinations)+")");
 									return true;
 								}
@@ -5566,8 +5842,8 @@ class ComputerBuilder
 								
 								if(debugMode) std::cout<<debugsc<<"Check inputs:"<<std::endl;
 								
-								if(!(componentInPattern.type==ComputerData::Pointer::Type::computerMemory && !directionToOutput)
-									&& componentInPattern.type!=ComputerData::Pointer::Type::computerInput)
+								if(!(componentInPattern.type==ComputerData::Pointer::Type::memory && !directionToOutput)
+									&& componentInPattern.type!=ComputerData::Pointer::Type::input)
 								{
 									vector<ComputerData::Pointer> patternInputs=getInputsCanRepeat(pattern,componentInPattern);
 									int patternInputCount=patternInputs.size();
@@ -5624,12 +5900,12 @@ class ComputerBuilder
 								
 								if(debugMode) std::cout<<debugsc<<"Check outputs:"<<std::endl;
 								
-								if(!(componentInPattern.type==ComputerData::Pointer::Type::computerMemory && directionToOutput)
-									&& componentInPattern.type!=ComputerData::Pointer::Type::computerOutput
+								if(!(componentInPattern.type==ComputerData::Pointer::Type::memory && directionToOutput)
+									&& componentInPattern.type!=ComputerData::Pointer::Type::output
 									&& componentInComputer.type!=ComputerData::Pointer::Type::constant)
 								{
 									bool dontCareForExtraOutputsInComputer=
-										!outputOfComponentActingAsOutput.isNone() || componentInPattern.type==ComputerData::Pointer::Type::computerInput;
+										!outputOfComponentActingAsOutput.isNone() || componentInPattern.type==ComputerData::Pointer::Type::input;
 									
 									vector<ComputerData::Pointer> patternOutputs=getOutputs(patternOutputData,componentInPattern);
 									int patternOutputCount=patternOutputs.size();
@@ -5696,9 +5972,9 @@ class ComputerBuilder
 									{
 										return componentInComputer==componentInPattern;
 									}
-									else if(componentInPattern.type==ComputerData::Pointer::Type::computerInput)
+									else if(componentInPattern.type==ComputerData::Pointer::Type::input)
 									{
-										if(componentInComputer.type==ComputerData::Pointer::Type::computerOutput) return false;
+										if(componentInComputer.type==ComputerData::Pointer::Type::output) return false;
 										if(componentInComputer.type==ComputerData::Pointer::Type::constant)
 										{
 											if(computerOutputData.getOutputsPtr(componentInPattern)->size()!=1) return false;
@@ -5729,7 +6005,7 @@ class ComputerBuilder
 									else return false;
 								}
 								
-								if(traverseInputs && !(componentInPattern.type==ComputerData::Pointer::Type::computerMemory && !directionToOutput))
+								if(traverseInputs && !(componentInPattern.type==ComputerData::Pointer::Type::memory && !directionToOutput))
 								{
 									if(debugMode) std::cout<<debugsc<<"Traverse inputs"<<std::endl;
 									
@@ -5766,7 +6042,7 @@ class ComputerBuilder
 								{
 									ComputerData::Pointer availablePatternOutput;
 									if(componentInPattern.type==ComputerData::Pointer::Type::nandGate
-										|| componentInPattern.type==ComputerData::Pointer::Type::computerMemory)
+										|| componentInPattern.type==ComputerData::Pointer::Type::memory)
 									{
 										vector<ComputerData::Pointer>*patternOutputsPtr=getOutputsPtr(patternOutputData,componentInPattern);
 										if(patternOutputsPtr!=nullptr)
@@ -5774,7 +6050,7 @@ class ComputerBuilder
 											for(int i=0;i<patternOutputsPtr->size();i++)
 											{
 												ComputerData::Pointer& patternOutput=(*patternOutputsPtr)[i];
-												if(patternOutput.type==ComputerData::Pointer::Type::computerOutput)
+												if(patternOutput.type==ComputerData::Pointer::Type::output)
 												{
 													if(!outputPointers.isAlreadyFound(patternOutput))
 													{
@@ -5810,19 +6086,19 @@ class ComputerBuilder
 								}
 								else if(computer.memory.size()>0)
 								{
-									return ComputerData::Pointer(ComputerData::Pointer::Type::computerMemory,computer.memory.size()-1);
+									return ComputerData::Pointer(ComputerData::Pointer::Type::memory,computer.memory.size()-1);
 								}
 								else
 								{
-									return ComputerData::Pointer(ComputerData::Pointer::Type::computerOutput,computer.outputs.size()-1);
+									return ComputerData::Pointer(ComputerData::Pointer::Type::output,computer.outputs.size()-1);
 								}
 							}
 							MessageQueue*messageQueuePtr=nullptr;
-							void addToMessageQueue(const string& messageType,const string& message)
+							void addToMessageQueue(const string& messageType,bool isWarning,const string& message)
 							{
 								if(messageQueuePtr!=nullptr)
 								{
-									messageQueuePtr->add(messageType,message);
+									messageQueuePtr->add(messageType,isWarning,message);
 								}
 							}
 							void setMessageQueue(MessageQueue& messageQueue)
@@ -5882,12 +6158,12 @@ class ComputerBuilder
 							}
 							void applyConnectionChange(ComputerData& computer,ComputerOutputData& computerOutputData,const ConnectionChange& change)
 							{
-								vector<ComputerData::Input*> inputPtrs=change.outputComponent.getInputPtrs(computer);
+								vector<ComputerData::Pointer*> inputPtrs=change.outputComponent.getInputPtrs(computer);
 								if(change.outputComponentInputIndex<0 || change.outputComponentInputIndex>=inputPtrs.size())
 								{
 									throw string()+"Trying to apply connection change with output component input index out of range";
 								}
-								*inputPtrs[change.outputComponentInputIndex]=ComputerData::Input(change.newInputComponent);
+								*inputPtrs[change.outputComponentInputIndex]=change.newInputComponent;
 								
 								computerOutputData.change(change);
 							}
@@ -5921,7 +6197,7 @@ class ComputerBuilder
 								
 								for(int i=0;i<outputPointersPatternToComputer.size();i++)
 								{
-									ComputerData::Pointer pointerInPattern(ComputerData::Pointer::Type::computerOutput,i);
+									ComputerData::Pointer pointerInPattern(ComputerData::Pointer::Type::output,i);
 									ComputerData::Pointer pointerInComputer=outputPointersPatternToComputer[i];
 									
 									if(pointerInComputer.isNone()) continue;
@@ -5933,7 +6209,7 @@ class ComputerBuilder
 								
 								for(int i=0;i<memoryPointersPatternToComputer.size();i++)
 								{
-									ComputerData::Pointer pointerInPattern(ComputerData::Pointer::Type::computerMemory,i);
+									ComputerData::Pointer pointerInPattern(ComputerData::Pointer::Type::memory,i);
 									ComputerData::Pointer pointerInComputer=memoryPointersPatternToComputer[i];
 									
 									addConnectionChangesToSubstituteInputsToResult(computer,pointers,pointerInPattern,pointerInComputer,connectionChanges);
@@ -5969,7 +6245,7 @@ class ComputerBuilder
 								
 								for(int i=0;i<outputsRedirectedInPattern.size();i++)
 								{
-									ComputerData::Pointer outputPointerInPattern(ComputerData::Pointer::Type::computerOutput,i);
+									ComputerData::Pointer outputPointerInPattern(ComputerData::Pointer::Type::output,i);
 									
 									ComputerData::Pointer pointerInPattern=outputsRedirectedInPattern[i];
 									if(pointerInPattern.isNone()) continue;
@@ -6121,15 +6397,23 @@ class ComputerBuilder
 					if(options.optimizeGates)
 					{
 						int prunedCount=pruneUnusedNandGates(computer);
-						std::cout<<"Gates removed: "<<prunedCount<<std::endl;
+						if(!options.silent) std::cout<<"Gates removed: "<<prunedCount<<std::endl;
 					}
 					if(options.optimizeMemory)
 					{
 						int prunedCount=pruneUnusedMemory(computer);
-						std::cout<<"Memory removed: "<<prunedCount<<std::endl;
+						if(!options.silent) std::cout<<"Memory removed: "<<prunedCount<<std::endl;
 					}
 					
 					MessageQueue messageQueue("At optimization (delayed message): ",100);
+					if(options.silent)
+					{
+						messageQueue.disableOutput();
+					}
+					if(options.failAtWarning)
+					{
+						messageQueue.setThrowAtWarning(true);
+					}
 					
 					ComputerOutputData computerOutputData;
 					
@@ -6137,7 +6421,7 @@ class ComputerBuilder
 					{
 						for(int passIndex=0;passIndex<options.passes || options.passes==-1;passIndex++)
 						{
-							std::cout<<"\n"<<"Optimization pass "<<(passIndex+1)<<std::endl;
+							if(!options.silent) std::cout<<"\n"<<"Optimization pass "<<(passIndex+1)<<std::endl;
 							
 							int changeCount=0;
 							
@@ -6154,11 +6438,11 @@ class ComputerBuilder
 							}
 							for(int i=0;i<computer.memory.size();i++)
 							{
-								pointers.emplace_back(ComputerData::Pointer::Type::computerMemory,i);
+								pointers.emplace_back(ComputerData::Pointer::Type::memory,i);
 							}
 							for(int i=0;i<computer.outputs.size();i++)
 							{
-								pointers.emplace_back(ComputerData::Pointer::Type::computerOutput,i);
+								pointers.emplace_back(ComputerData::Pointer::Type::output,i);
 							}
 							
 							messageQueue.setMessagesPerFlush(pointers.size()/10+10);
@@ -6172,13 +6456,13 @@ class ComputerBuilder
 								{
 									if(options.maxTime!=-1 && optimizationTimeCounter.end()>=options.maxTime)
 									{
-										std::cout<<"Stopping ("<<optimizationTimeCounter.end()<<" s >= "<<options.maxTime<<" s"<<")"<<std::endl;
+										if(!options.silent) std::cout<<"Stopping ("<<optimizationTimeCounter.end()<<" s >= "<<options.maxTime<<" s"<<")"<<std::endl;
 										break;
 									}
 									
 									if(i%(pointers.size()/10+1)==0 || showProgressTimeCounter.end()>=10)
 									{
-										std::cout<<pointers[i].toString()<<" ("<<(i*100/pointers.size())<<"%)"<<std::endl;
+										if(!options.silent) std::cout<<pointers[i].toString()<<" ("<<(i*100/pointers.size())<<"%)"<<std::endl;
 										showProgressTimeCounter.start();
 									}
 									
@@ -6201,42 +6485,45 @@ class ComputerBuilder
 								
 								messageQueue.flush();
 								
-								if(options.verbose)
+								if(!options.silent)
 								{
-									std::cout<<"\n";
-									for(int j=0;j<rules.size();j++)
+									if(options.verbose)
 									{
-										if(!options.optimizeMemory && rules[j].optimizesMemory()) continue;
-										
-										std::cout<<"Rule '"<<rules[j].name<<"' optimizations: "<<ruleOptimizationCounts[j]<<"\n";
+										std::cout<<"\n";
+										for(int j=0;j<rules.size();j++)
+										{
+											if(!options.optimizeMemory && rules[j].optimizesMemory()) continue;
+											
+											std::cout<<"Rule '"<<rules[j].name<<"' optimizations: "<<ruleOptimizationCounts[j]<<"\n";
+										}
+										std::cout<<"\n";
+										for(int j=0;j<rules.size();j++)
+										{
+											if(!options.optimizeMemory && rules[j].optimizesMemory()) continue;
+											
+											std::cout<<"Rule '"<<rules[j].name<<"' total node match tests: "<<rules[j].matchesWith_count<<"\n";
+										}
+										std::cout<<std::endl;
 									}
-									std::cout<<"\n";
-									for(int j=0;j<rules.size();j++)
-									{
-										if(!options.optimizeMemory && rules[j].optimizesMemory()) continue;
-										
-										std::cout<<"Rule '"<<rules[j].name<<"' total node match tests: "<<rules[j].matchesWith_count<<"\n";
-									}
-									std::cout<<std::endl;
+									
+									std::cout<<"Optimizations done: "<<optimizationCount<<std::endl;
 								}
-								
-								std::cout<<"Optimizations done: "<<optimizationCount<<std::endl;
 							}
 							
 							if(options.optimizeGates)
 							{
 								int prunedCount=pruneUnusedNandGates(computer);
-								std::cout<<"Gates removed: "<<prunedCount<<std::endl;
+								if(!options.silent) std::cout<<"Gates removed: "<<prunedCount<<std::endl;
 								changeCount+=prunedCount;
 							}
 							if(options.optimizeMemory)
 							{
 								int prunedCount=pruneUnusedMemory(computer);
-								std::cout<<"Memory removed: "<<prunedCount<<std::endl;
+								if(!options.silent) std::cout<<"Memory removed: "<<prunedCount<<std::endl;
 								changeCount+=prunedCount;
 							}
 							
-							std::cout<<"Total elapsed time: "<<optimizationTimeCounter.end()<<" s"<<std::endl;
+							if(!options.silent) std::cout<<"Total elapsed time: "<<optimizationTimeCounter.end()<<" s"<<std::endl;
 							
 							if(changeCount==0) break;
 							if(options.maxTime!=-1 && optimizationTimeCounter.end()>=options.maxTime) break;
@@ -6287,7 +6574,466 @@ class ComputerBuilder
 			
 			return computer.getComputer();
 		}
+		
+		private:
+			static string decompile_getInputName(int index)
+			{
+				return string()+"i"+std::to_string(index);
+			}
+			static string decompile_getMemoryName(int index)
+			{
+				return string()+"m"+std::to_string(index);
+			}
+			static string decompile_getNandGateName(int index)
+			{
+				return string()+"n"+std::to_string(index);
+			}
+			static string decompile_getOutputName(int index)
+			{
+				return string()+"o"+std::to_string(index);
+			}
+			static string decompile_getName(const ComputerData::Pointer& pointer)
+			{
+				if(pointer.type==ComputerData::Pointer::Type::input)
+				{
+					return decompile_getInputName(pointer.index);
+				}
+				else if(pointer.type==ComputerData::Pointer::Type::memory)
+				{
+					return decompile_getMemoryName(pointer.index);
+				}
+				else if(pointer.type==ComputerData::Pointer::Type::output)
+				{
+					return decompile_getOutputName(pointer.index);
+				}
+				else if(pointer.type==ComputerData::Pointer::Type::nandGate)
+				{
+					return decompile_getNandGateName(pointer.index);
+				}
+				else if(pointer.type==ComputerData::Pointer::Type::constant)
+				{
+					return std::to_string(pointer.index);
+				}
+				else throw string()+"Invalid pointer type";
+			}
+		public:
+		
+		static string decompile(const ComputerData& computer,const string& mainComponentName="main")
+		{
+			string codeString;
+			
+			try
+			{
+				codeString+=mainComponentName+":\n\n";
+				
+				for(int i=0;i<computer.outputs.size();i++)
+				{
+					codeString+=decompile_getOutputName(i)+": out\n";
+				}
+				codeString+="\n";
+				
+				for(int i=0;i<computer.numberOfInputs;i++)
+				{
+					codeString+=decompile_getInputName(i)+": in\n";
+				}
+				codeString+="\n";
+				
+				for(int i=0;i<computer.memory.size();i++)
+				{
+					codeString+=decompile_getMemoryName(i)+": reg\n";
+				}
+				codeString+="\n";
+				
+				for(int i=0;i<computer.nandGates.size();i++)
+				{
+					codeString+=decompile_getNandGateName(i)+"=nand "
+						+decompile_getName(computer.nandGates[i].inputA)
+						+" "+decompile_getName(computer.nandGates[i].inputB)
+						+"\n";
+				}
+				codeString+="\n";
+				
+				for(int i=0;i<computer.memory.size();i++)
+				{
+					codeString+=decompile_getMemoryName(i)+"=set "+decompile_getName(computer.memory[i].input)+"\n";
+				}
+				codeString+="\n";
+				
+				for(int i=0;i<computer.outputs.size();i++)
+				{
+					codeString+=decompile_getOutputName(i)+"=set "+decompile_getName(computer.outputs[i].input)+"\n";
+				}
+				codeString+="\n";
+			}
+			catch(const string& str)
+			{
+				throw string()+"Error while decompiling: "+str;
+			}
+			
+			return codeString;
+		}
 	};
+	
+	private:
+		inline static ComputerData::Pointer getNandGateInputPointerFromIndex(int index,int numberOfInputs)
+		{
+			if(index<numberOfInputs) return ComputerData::Pointer(ComputerData::Pointer::Type::input,index);
+			else return ComputerData::Pointer(ComputerData::Pointer::Type::nandGate,index-numberOfInputs);
+		}
+		inline static int getIndexFromNandGateInputPointer(const ComputerData::Pointer& pointer,int numberOfInputs)
+		{
+			if(pointer.type==ComputerData::Pointer::Type::input) return pointer.index;
+			else return pointer.index+numberOfInputs;
+		}
+		static void setNandGateInputs(ComputerData& circuit,const vector<vector<int>>& inputs)
+		{
+			for(int i=0;i<circuit.nandGates.size();i++)
+			{
+				circuit.nandGates[i].inputA=getNandGateInputPointerFromIndex(inputs[0][i],circuit.numberOfInputs);
+				circuit.nandGates[i].inputB=getNandGateInputPointerFromIndex(inputs[1][i],circuit.numberOfInputs);
+			}
+		}
+		static vector<vector<int>> getNandGateInputs(ComputerData& circuit)
+		{
+			vector<vector<int>> inputs(2,vector<int>(circuit.nandGates.size()));
+			for(int i=0;i<circuit.nandGates.size();i++)
+			{
+				inputs[0][i]=getIndexFromNandGateInputPointer(circuit.nandGates[i].inputA,circuit.numberOfInputs);
+				inputs[1][i]=getIndexFromNandGateInputPointer(circuit.nandGates[i].inputB,circuit.numberOfInputs);
+			}
+			return inputs;
+		}
+		static int getEqualOrGreaterValidInputB(const vector<vector<int>>& inputs,int numberOfInputs,int gate,int inputA,int inputB)
+		{
+			int i=inputA;
+			for(int j=inputB;j<numberOfInputs+gate;j++)
+			{
+				bool found=false;
+				for(int gb=0;gb<gate;gb++)
+				{
+					if(inputs[0][gb]==i && inputs[1][gb]==j)
+					{
+						found=true;
+						break;
+					}
+				}
+				if(found) continue;
+				if(i==j && i>=numberOfInputs)
+				{
+					if(inputs[0][i-numberOfInputs]==inputs[1][i-numberOfInputs]) continue;
+				}
+				return j;
+			}
+			return -1;
+		}
+		static bool moveInputsToEqualOrGreaterValidInputs(vector<vector<int>>& inputs,int numberOfInputs,int gate,int inputA,int inputB)
+		{
+			for(int i=inputA,j=inputB;i<numberOfInputs+gate;i++)
+			{
+				j=getEqualOrGreaterValidInputB(inputs,numberOfInputs,gate,i,j);
+				if(j!=-1)
+				{
+					inputs[0][gate]=i;
+					inputs[1][gate]=j;
+					return true;
+				}
+				else j=i+1;
+			}
+			return false;
+		}
+		static bool moveInputsToFirstValidCombination(vector<vector<int>>& inputs,int numberOfInputs,int numberOfGates,int startGate)
+		{
+			for(int gate=startGate;gate<numberOfGates;gate++)
+			{
+				if(!moveInputsToEqualOrGreaterValidInputs(inputs,numberOfInputs,gate,0,0))
+				{
+					return false;
+				}
+			}
+			return true;
+		}
+		static bool moveInputsToNextValidCombination(vector<vector<int>>& inputs,int numberOfInputs,int numberOfGates)
+		{
+			for(int startGate=numberOfGates-1;startGate>=0;startGate--)
+			{
+				if(moveInputsToEqualOrGreaterValidInputs(inputs,numberOfInputs,startGate,inputs[0][startGate],inputs[1][startGate]+1))
+				{
+					if(startGate==numberOfGates-1) return true;
+					else if(moveInputsToFirstValidCombination(inputs,numberOfInputs,numberOfGates,startGate+1))
+					{
+						return true;
+					}
+				}
+			}
+			return false;
+		}
+		static ComputerData getFirstCircuitCombination(int numberOfInputs,int numberOfGates,bool& success)
+		{
+			ComputerData circuit;
+			
+			circuit.addInputs(numberOfInputs);
+			for(int i=0;i<numberOfInputs;i++)
+			{
+				circuit.addOutput(ComputerData::Pointer(ComputerData::Pointer::Type::input,i));
+			}
+			
+			ComputerData::Pointer pointer(ComputerData::Pointer::Type::input,0);
+			for(int i=0;i<numberOfGates;i++)
+			{
+				circuit.addNandGate(ComputerData::NandGate(pointer,pointer));
+				
+				circuit.addOutput(ComputerData::Pointer(ComputerData::Pointer::Type::nandGate,i));
+			}
+			
+			if(numberOfGates==0)
+			{
+				success=true;
+				
+				return circuit;
+			}
+			
+			vector<vector<int>> inputs=getNandGateInputs(circuit);
+			
+			if(!moveInputsToFirstValidCombination(inputs,numberOfInputs,numberOfGates,0))
+			{
+				success=false;
+				
+				return circuit;
+			}
+			else
+			{
+				success=true;
+				
+				setNandGateInputs(circuit,inputs);
+				
+				return circuit;
+			}
+		}
+		static bool incrementCircuitCombination(ComputerData& circuit)
+		{
+			vector<vector<int>> inputs=getNandGateInputs(circuit);
+			
+			int numberOfInputs=circuit.numberOfInputs;
+			int numberOfGates=circuit.nandGates.size();
+			
+			if(numberOfGates==0) return false;
+			
+			if(!moveInputsToNextValidCombination(inputs,numberOfInputs,numberOfGates)) return false;
+			
+			setNandGateInputs(circuit,inputs);
+			
+			return true;
+		}
+		static bool circuitOutputsMatch(const ComputerData& referenceCircuit,const ComputerData& circuit,ComputerData& circuitWithCorrectOutputs)
+		{
+			int maxInputs=32;
+			if(referenceCircuit.numberOfInputs>maxInputs)
+			{
+				throw string()+"The circuit has too many inputs ("
+					+std::to_string(referenceCircuit.numberOfInputs)+">"+std::to_string(maxInputs)+")";
+			}
+			
+			uint64_t inputCombinations=(uint64_t(1)<<referenceCircuit.numberOfInputs);
+			
+			Computer referenceComputer=referenceCircuit.getComputer();
+			Computer computer=circuit.getComputer();
+			
+			vector<vector<int>> outputCandidates(referenceCircuit.outputs.size(),vector<int>(circuit.outputs.size(),true));
+			vector<int> outputCandidateCounts(referenceCircuit.outputs.size(),circuit.outputs.size());
+			
+			constexpr uint64_t combinationsPerBatch=64;
+			
+			using State=Computer::State<uint64_t>;
+			
+			State referenceInitialState=referenceComputer.getInitialState<State>(combinationsPerBatch);
+			State initialState=computer.getInitialState<State>(combinationsPerBatch);
+			State referenceState;
+			State state;
+			
+			for(uint64_t batch=0;batch*combinationsPerBatch<inputCombinations;batch++)
+			{
+				uint64_t firstCombination=batch*combinationsPerBatch;
+				
+				uint64_t combinationsThisBatch=inputCombinations-firstCombination;
+				if(combinationsThisBatch>combinationsPerBatch) combinationsThisBatch=combinationsPerBatch;
+				
+				for(int i=0;i<initialState.inputs.size();i++)
+				{
+					uint64_t number=0;
+					for(int b=0;b<combinationsThisBatch;b++)
+					{
+						number|=((((firstCombination+b)>>i)&1)<<b);
+					}
+					
+					referenceInitialState.inputs[i]=number;
+					initialState.inputs[i]=number;
+				}
+				
+				referenceState=referenceComputer.simulateStep(referenceInitialState);
+				state=computer.simulateStep(initialState);
+				
+				for(int i=0;i<referenceState.outputs.size();i++)
+				{
+					for(int j=0;j<state.outputs.size();j++)
+					{
+						if(!outputCandidates[i][j]) continue;
+						if(state.outputs[j]!=referenceState.outputs[i])
+						{
+							outputCandidates[i][j]=false;
+							outputCandidateCounts[i]--;
+							if(outputCandidateCounts[i]==0)
+							{
+								return false;
+							}
+						}
+					}
+				}
+			}
+			
+			circuitWithCorrectOutputs=circuit;
+			circuitWithCorrectOutputs.outputs.resize(0);
+			
+			for(int i=0;i<outputCandidates.size();i++)
+			{
+				int index=-1;
+				for(int j=0;j<outputCandidates[i].size();j++)
+				{
+					if(outputCandidates[i][j])
+					{
+						index=j;
+						break;
+					}
+				}
+				if(index==-1) return false;
+				circuitWithCorrectOutputs.addOutput(circuit.outputs[index].input);
+			}
+			
+			return true;
+		}
+		
+		static ComputerData optimizationSearch_bruteForce(const ComputerData& referenceCircuit,const OptimizationSearchOptions& options)
+		{
+			try
+			{
+				if(referenceCircuit.memory.size()>0)
+				{
+					throw string()+"There is memory in the input circuit for the brute force optimization search";
+				}
+				
+				ComputerData bestCandidate=referenceCircuit;
+				
+				if(referenceCircuit.numberOfInputs<=0)
+				{
+					throw string()+"The circuit has no inputs";
+				}
+				if(referenceCircuit.outputs.size()==0)
+				{
+					throw string()+"The circuit has no outputs";
+				}
+				
+				bool foundBetterSolution=false;
+				
+				bool print=!options.silent;
+				double maxTime=options.maxTime;
+				
+				if(print) std::cout<<"Input circuit with "
+					<<referenceCircuit.nandGates.size()<<" gate"<<(referenceCircuit.nandGates.size()==1 ? "" : "s")
+					<<std::endl;
+				
+				int maxGates=options.maxGates;
+				if(maxGates<0) maxGates+=referenceCircuit.nandGates.size();
+				if(maxGates<0) maxGates=0;
+				if(maxGates>=referenceCircuit.nandGates.size())
+				{
+					if(print) std::cout<<"Returning the input circuit (it has the required number of gates)"<<std::endl;
+					return referenceCircuit;
+				}
+				
+				TimeCounter searchTimeCounter;
+				searchTimeCounter.start();
+				
+				for(int numberOfGates=0;numberOfGates<=maxGates;numberOfGates++)
+				{
+					if(print) std::cout<<"\n"<<"Searching with "<<numberOfGates<<" gate"<<(numberOfGates==1 ? "" : "s")<<"..."<<"\n"<<std::endl;
+					
+					bool firstCombinationSuccess=true;
+					ComputerData circuit=getFirstCircuitCombination(referenceCircuit.numberOfInputs,numberOfGates,firstCombinationSuccess);
+					if(!firstCombinationSuccess)
+					{
+						if(print) std::cout<<"Could not generate the first combination of gates"<<std::endl;
+						break;
+					}
+					
+					TimeCounter showProgressTimeCounter;
+					showProgressTimeCounter.start();
+					
+					ComputerData circuitWithCorrectOutputs;
+					
+					for(uint64_t combination=0;;combination++)
+					{
+						if(maxTime!=-1 && searchTimeCounter.end()>=maxTime)
+						{
+							break;
+						}
+						
+						if(showProgressTimeCounter.end()>=10)
+						{
+							if(print) std::cout<<"Combination "<<combination<<std::endl;
+							showProgressTimeCounter.start();
+						}
+						
+						if(circuitOutputsMatch(referenceCircuit,circuit,circuitWithCorrectOutputs))
+						{
+							foundBetterSolution=true;
+							bestCandidate=circuitWithCorrectOutputs;
+							
+							if(print) std::cout<<"Found circuit with "<<numberOfGates<<" gate"<<(numberOfGates==1 ? "" : "s")<<" ("<<searchTimeCounter.end()<<" s)"<<std::endl;
+							
+							break;
+						}
+						
+						if(!incrementCircuitCombination(circuit)) break;
+					}
+					if(foundBetterSolution)
+					{
+						break;
+					}
+					if(maxTime!=-1 && searchTimeCounter.end()>=maxTime)
+					{
+						if(print) std::cout<<"Stopping ("<<searchTimeCounter.end()<<" s >= "<<maxTime<<"s)"<<std::endl;
+						break;
+					}
+				}
+				
+				if(!foundBetterSolution)
+				{
+					if(print) std::cout<<"A better circuit with the specified requirements has not been found. Returning the input circuit"<<std::endl;
+				}
+				
+				return bestCandidate;
+			}
+			catch(const string& str)
+			{
+				throw string()+"Error during optimization search: "+str;
+			}
+		}
+	public:
+	
+	static string optimizationSearch_bruteForce(const string& inputCode,const OptimizationSearchOptions& options)
+	{
+		Code code(inputCode);
+		ComputerData referenceCircuit=code.compileToComputerData();
+		
+		Code::pruneUnusedNandGates(referenceCircuit);
+		
+		return Code::decompile(optimizationSearch_bruteForce(referenceCircuit,options));
+	}
+	
+	static string optimizationSearch(const string& inputCode,const OptimizationSearchOptions& options)
+	{
+		if(options.algorithm=="bruteforce") return optimizationSearch_bruteForce(inputCode,options);
+		else throw string()+"Algorithm not recognized";
+	}
 	
 	Computer buildComputer(const string& codeText,const OptimizationOptions& optimizationOptions,const string& optimizationRulesCodeText)
 	{
