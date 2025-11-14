@@ -265,6 +265,7 @@ class Computer
 				{
 					r[i]=~(a[i]&b[i]);
 				}
+				return r;
 			}
 			else return ~(a&b);
 		}
