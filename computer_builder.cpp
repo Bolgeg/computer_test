@@ -6707,11 +6707,11 @@ class ComputerBuilder
 			
 			using State=Computer::State<vector<uint64_t>>;
 			
-			State state=referenceComputer.getInitialState<State>(inputCombinations);
+			State initialState=referenceComputer.getInitialState<State>(inputCombinations);
 			
-			for(int i=0;i<state.inputs.size();i++)
+			for(int i=0;i<initialState.inputs.size();i++)
 			{
-				for(int j=0;j<state.inputs[i].size();j++)
+				for(int j=0;j<initialState.inputs[i].size();j++)
 				{
 					uint64_t firstCombination=j*64;
 					uint64_t number=0;
@@ -6719,11 +6719,31 @@ class ComputerBuilder
 					{
 						number|=((((firstCombination+b)>>i)&1)<<b);
 					}
-					state.inputs[i][j]=number;
+					initialState.inputs[i][j]=number;
 				}
 			}
 			
-			state=referenceComputer.simulateStep(state);
+			State state=referenceComputer.simulateStep(initialState);
+			
+			for(int o=0;o<state.outputs.size();o++)
+			{
+				for(int i=0;i<initialState.inputs.size();i++)
+				{
+					bool equal=true;
+					for(int k=0;k<initialState.inputs[i].size();k++)
+					{
+						if(initialState.inputs[i][k]!=state.outputs[o][k])
+						{
+							equal=false;
+							break;
+						}
+					}
+					if(equal)
+					{
+						throw string()+"Error: output number "+std::to_string(o)+" has always the same value as the input number "+std::to_string(i);
+					}
+				}
+			}
 			
 			return state.outputs;
 		}
@@ -6734,25 +6754,59 @@ class ComputerBuilder
 				int numberOfInputs=0;
 				int numberOfGates=0;
 				
-				vector<vector<int>> circuit;
+				vector<vector<int>> circuitContainer;
+				int*gates[2]={nullptr,nullptr};
+				
+				int firstModifiedGate=0;
 				
 				vector<vector<int>> outputCandidates;
 				vector<int> outputCandidateCounts;
-				vector<uint64_t> outputs;
+				vector<vector<uint64_t>> outputs;
+				
+				uint64_t precomputedFirstInputCombinations[6];
+				void computeFirstInputCombinations()
+				{
+					precomputedFirstInputCombinations[5]=(uint64_t(uint32_t(-1))<<32);
+					for(int i=4;i>=0;i--)
+					{
+						precomputedFirstInputCombinations[i]=
+							precomputedFirstInputCombinations[i+1]^(precomputedFirstInputCombinations[i+1]>>(uint64_t(1)<<i));
+					}
+				}
 			public:
 			
-			CircuitOutputMatcher(){}
 			CircuitOutputMatcher(const vector<vector<uint64_t>>& _referenceCircuitOutputs,int _numberOfInputs,int _numberOfGates)
 			{
 				referenceCircuitOutputs=_referenceCircuitOutputs;
 				numberOfInputs=_numberOfInputs;
 				numberOfGates=_numberOfGates;
 				
-				circuit=vector<vector<int>>(2,vector<int>(numberOfGates,0));
+				constexpr int maxSum=0x10000;
+				if(numberOfInputs+numberOfGates>maxSum)
+				{
+					throw string()+"Error: input_count+gate_count > "+std::to_string(maxSum);
+				}
 				
-				outputCandidates=vector<vector<int>>(referenceCircuitOutputs.size(),vector<int>(numberOfInputs+numberOfGates,true));
-				outputCandidateCounts=vector<int>(referenceCircuitOutputs.size(),numberOfInputs+numberOfGates);
-				outputs=vector<uint64_t>(numberOfInputs+numberOfGates,0);
+				circuitContainer=vector<vector<int>>(2,vector<int>(numberOfGates,0));
+				gates[0]=circuitContainer[0].data();
+				gates[1]=circuitContainer[1].data();
+				
+				outputCandidates=vector<vector<int>>(referenceCircuitOutputs.size(),vector<int>(numberOfGates,true));
+				outputCandidateCounts=vector<int>(referenceCircuitOutputs.size(),numberOfGates);
+				
+				uint64_t inputCombinations=(uint64_t(1)<<numberOfInputs);
+				uint64_t batches=inputCombinations/64+(inputCombinations%64!=0 ? 1 : 0);
+				
+				outputs=vector<vector<uint64_t>>(numberOfInputs+numberOfGates,vector<uint64_t>(batches,0));
+				
+				computeFirstInputCombinations();
+				for(int i=0;i<6 && i<numberOfInputs;i++)
+				{
+					for(uint64_t batch=0;batch<batches;batch++)
+					{
+						outputs[i][batch]=precomputedFirstInputCombinations[i];
+					}
+				}
 			}
 			
 			private:
@@ -6761,57 +6815,72 @@ class ComputerBuilder
 					if(index<numberOfInputs) return ComputerData::Pointer(ComputerData::Pointer::Type::input,index);
 					else return ComputerData::Pointer(ComputerData::Pointer::Type::nandGate,index-numberOfInputs);
 				}
+				inline int& inputAt(int gate,int inputIndex)
+				{
+					return gates[inputIndex][gate];
+				}
 				inline uint32_t getInputPairValue(int a,int b)
 				{
-					return ((uint32_t(a)&0xff)<<8)|(uint32_t(b)&0xff);
+					return ((uint32_t(a)&0xffff)<<16)|(uint32_t(b)&0xffff);
 				}
 				int getEqualOrGreaterValidInputB(int gate,int inputA,int inputB)
 				{
+					if(gate==0) return inputB<numberOfInputs ? inputB : -1;
+					
 					int i=inputA;
 					for(int j=inputB;j<numberOfInputs+gate;j++)
 					{
-						bool found=false;
-						for(int gb=0;gb<gate;gb++)
+						if(j!=numberOfInputs+gate-1)
 						{
-							if(circuit[0][gb]==i && circuit[1][gb]==j)
-							{
-								found=true;
-								break;
-							}
-						}
-						if(found) continue;
-						if(i==j && i>=numberOfInputs)
-						{
-							if(circuit[0][i-numberOfInputs]==circuit[1][i-numberOfInputs]) continue;
-						}
-						if(gate>0 && j!=numberOfInputs+gate-1)
-						{
-							if(getInputPairValue(circuit[0][gate-1],circuit[1][gate-1])>getInputPairValue(i,j))
+							if(getInputPairValue(inputAt(gate-1,0),inputAt(gate-1,1))>=getInputPairValue(i,j))
 							{
 								continue;
 							}
+							
+							bool found=false;
+							for(int gb=std::max(0,j-numberOfInputs+1);gb<gate-1;gb++)
+							{
+								if(inputAt(gb,0)==i && inputAt(gb,1)==j)
+								{
+									found=true;
+									break;
+								}
+							}
+							if(found) continue;
 						}
+						
+						if(i==j && i>=numberOfInputs)
+						{
+							if(inputAt(i-numberOfInputs,0)==inputAt(i-numberOfInputs,1)) continue;
+						}
+						
 						return j;
 					}
 					return -1;
 				}
 				bool moveInputsToEqualOrGreaterValidInputs(int gate,int inputA,int inputB)
 				{
-					for(int i=inputA,j=inputB;i<numberOfInputs+gate;i++)
+					for(int i=inputA,j=inputB;i<numberOfInputs+gate;)
 					{
 						j=getEqualOrGreaterValidInputB(gate,i,j);
-						if(j!=-1)
+						if(j==-1)
 						{
-							circuit[0][gate]=i;
-							circuit[1][gate]=j;
+							i++;
+							j=i;
+						}
+						else
+						{
+							inputAt(gate,0)=i;
+							inputAt(gate,1)=j;
 							return true;
 						}
-						else j=i+1;
 					}
 					return false;
 				}
 				bool moveInputsToFirstValidCombination(int startGate)
 				{
+					if(startGate<firstModifiedGate) firstModifiedGate=startGate;
+					
 					for(int gate=startGate;gate<numberOfGates;gate++)
 					{
 						if(!moveInputsToEqualOrGreaterValidInputs(gate,0,0))
@@ -6825,7 +6894,9 @@ class ComputerBuilder
 				{
 					for(int startGate=numberOfGates-1;startGate>=0;startGate--)
 					{
-						if(moveInputsToEqualOrGreaterValidInputs(startGate,circuit[0][startGate],circuit[1][startGate]+1))
+						if(startGate<firstModifiedGate) firstModifiedGate=startGate;
+						
+						if(moveInputsToEqualOrGreaterValidInputs(startGate,inputAt(startGate,0),inputAt(startGate,1)+1))
 						{
 							if(startGate==numberOfGates-1) return true;
 							else if(moveInputsToFirstValidCombination(startGate+1))
@@ -6845,8 +6916,8 @@ class ComputerBuilder
 					for(int i=0;i<numberOfGates;i++)
 					{
 						computer.addNandGate(ComputerData::NandGate(
-							getPointerFromIndex(circuit[0][i]),
-							getPointerFromIndex(circuit[1][i])
+							getPointerFromIndex(inputAt(i,0)),
+							getPointerFromIndex(inputAt(i,1))
 							));
 					}
 					
@@ -6869,10 +6940,13 @@ class ComputerBuilder
 				
 				for(size_t i=0;i<outputCandidateCounts.size();i++)
 				{
-					outputCandidateCounts[i]=numberOfInputs+numberOfGates;
-					for(size_t j=0;j<outputCandidates[i].size();j++)
+					for(size_t j=firstModifiedGate;j<numberOfGates;j++)
 					{
-						outputCandidates[i][j]=true;
+						if(!outputCandidates[i][j])
+						{
+							outputCandidates[i][j]=true;
+							outputCandidateCounts[i]++;
+						}
 					}
 				}
 				
@@ -6880,38 +6954,39 @@ class ComputerBuilder
 				{
 					uint64_t firstCombination=batch*64;
 					
-					for(int i=0;i<numberOfInputs;i++)
+					for(int i=6;i<numberOfInputs;i++)
 					{
-						uint64_t number=0;
-						for(int b=0;b<64;b++)
-						{
-							number|=((((firstCombination+b)>>i)&1)<<b);
-						}
-						outputs[i]=number;
+						outputs[i][batch]=(((firstCombination>>i)&1) ? uint64_t(int64_t(int32_t(-1))) : 0);
 					}
 					
-					for(int g=0;g<numberOfGates;g++)
+					for(int g=firstModifiedGate;g<numberOfGates;g++)
 					{
-						outputs[numberOfInputs+g]=~(outputs[circuit[0][g]]&outputs[circuit[1][g]]);
+						outputs[numberOfInputs+g][batch]=~(outputs[inputAt(g,0)][batch]&outputs[inputAt(g,1)][batch]);
 					}
 					
 					for(int i=0;i<referenceCircuitOutputs.size();i++)
 					{
-						for(int j=0;j<outputs.size();j++)
+						for(int j=firstModifiedGate;j<numberOfGates;j++)
 						{
 							if(!outputCandidates[i][j]) continue;
-							if(outputs[j]!=referenceCircuitOutputs[i][batch])
+							if(outputs[numberOfInputs+j][batch]!=referenceCircuitOutputs[i][batch])
 							{
 								outputCandidates[i][j]=false;
 								outputCandidateCounts[i]--;
-								if(outputCandidateCounts[i]==0)
-								{
-									return false;
-								}
 							}
 						}
 					}
+					for(int i=0;i<referenceCircuitOutputs.size();i++)
+					{
+						if(outputCandidateCounts[i]==0)
+						{
+							if((batch+1)*64>=inputCombinations) firstModifiedGate=numberOfGates;
+							return false;
+						}
+					}
 				}
+				
+				firstModifiedGate=numberOfGates;
 				
 				outputCircuit=getComputerData();
 				
@@ -6922,11 +6997,14 @@ class ComputerBuilder
 					{
 						if(outputCandidates[i][j])
 						{
-							index=j;
+							index=numberOfInputs+j;
 							break;
 						}
 					}
-					if(index==-1) return false;
+					if(index==-1)
+					{
+						return false;
+					}
 					outputCircuit.addOutput(getPointerFromIndex(index));
 				}
 				
