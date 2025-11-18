@@ -92,6 +92,32 @@ oc=and ia ib
 
 
 
+demultiplexer1:
+isel: in
+i: in
+o: out 2
+
+isel_not=not isel
+oa=and isel_not i
+ob=and isel i
+o=set2 oa+ob
+
+
+
+demultiplexer<S=2...8>:
+isel: in <S>
+i: in
+o: out <2**S>
+
+isel_lastbit=set isel[<S-1>]
+isel_lastbit_not=not isel_lastbit
+_o=demultiplexer<S-1> isel[0:<S-1>] i
+oa=and*<2**S/2> isel_lastbit_not*<2**S/2> _o
+ob=and*<2**S/2> isel_lastbit*<2**S/2> _o
+o=set<2**S> oa+ob
+
+
+
 main:
 ia: in
 ib: in
@@ -100,3 +126,13 @@ o: out
 oc: out
 
 o oc=fulladder ia ib ic
+
+
+
+_main</S=2>:
+isel: in <S>
+i: in
+o: out <2**S>
+
+o=demultiplexer<S> isel i
+

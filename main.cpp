@@ -272,6 +272,34 @@ int main(int argc,char*argv[])
 								throw string()+"Invalid value for option: '"+argfull+"'";
 							}
 						}
+						else if(removeStringStart(arg,"-memory="))
+						{
+							uint64_t unit=(uint64_t(1)<<20);
+							if(arg.size()>0)
+							{
+								if(arg[arg.size()-1]=='M')
+								{
+									unit=(uint64_t(1)<<20);
+									arg.resize(arg.size()-1);
+								}
+								else if(arg[arg.size()-1]=='G')
+								{
+									unit=(uint64_t(1)<<30);
+									arg.resize(arg.size()-1);
+								}
+							}
+							
+							try
+							{
+								int memory=std::stoi(arg);
+								if(memory<=0) throw 1;
+								options.memory=uint64_t(memory)*unit;
+							}
+							catch(...)
+							{
+								throw string()+"Invalid value for option: '"+argfull+"'";
+							}
+						}
 						else if(removeStringStart(arg,"-maxt="))
 						{
 							try
